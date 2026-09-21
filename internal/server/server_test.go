@@ -6,11 +6,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"money-tacker/internal/config"
 	"money-tacker/internal/db"
+	"money-tacker/internal/money"
 	"money-tacker/internal/store"
 	"money-tacker/migrations"
 )
@@ -127,6 +129,101 @@ func TestOverRedeemAndVoidNotLast(t *testing.T) {
 	void := doJSON(t, h, "POST", "/api/holdings/AF247494G/ledger/"+itoa(addBody.ID)+"/void", map[string]any{}, ck)
 	if void.Code != 409 {
 		t.Fatalf("void first %d %s", void.Code, void.Body.String())
+	}
+}
+
+func TestProductLookup(t *testing.T) {
+	s := testServer(t)
+	h := s.Router()
+	reg := doJSON(t, h, "POST", "/api/auth/register", map[string]string{"account": "alice", "password": "secret1"}, nil)
+	ck := cookie(reg)
+
+	ok := doJSON(t, h, "GET", "/api/products/af247494g", nil, ck)
+	if ok.Code != 200 {
+		t.Fatalf("lookup %d %s", ok.Code, ok.Body.String())
+	}
+	var p map[string]any
+	_ = json.Unmarshal(ok.Body.Bytes(), &p)
+	if p["product_code"] != "AF247494G" || p["name"] == "" || p["listed"] != true {
+		t.Fatalf("product %+v", p)
+	}
+	if p["latest_nav"] != money.FormatNav(105620000) || p["latest_nav_date"] != "2026-09-18" {
+		t.Fatalf("nav %+v", p)
+	}
+
+	miss := doJSON(t, h, "GET", "/api/products/NOPE999", nil, ck)
+	if miss.Code != 404 {
+		t.Fatalf("miss %d %s", miss.Code, miss.Body.String())
+	}
+
+	if _, err := s.Store.DB.Exec(`UPDATE product SET listed=0 WHERE code=?`, "AF247494G"); err != nil {
+		t.Fatal(err)
+	}
+	delisted := doJSON(t, h, "GET", "/api/products/AF247494G", nil, ck)
+	if delisted.Code != 200 {
+		t.Fatalf("delisted %d %s", delisted.Code, delisted.Body.String())
+	}
+	_ = json.Unmarshal(delisted.Body.Bytes(), &p)
+	if p["listed"] != false {
+		t.Fatalf("want listed false, got %+v", p)
+	}
+
+	if err := s.Store.UpsertProduct("NONAV001", "无净值产品", "测试", 1, s.Now()); err != nil {
+		t.Fatal(err)
+	}
+	empty := doJSON(t, h, "GET", "/api/products/NONAV001", nil, ck)
+	if empty.Code != 200 {
+		t.Fatalf("empty %d %s", empty.Code, empty.Body.String())
+	}
+	_ = json.Unmarshal(empty.Body.Bytes(), &p)
+	if p["latest_nav"] != "" || p["latest_nav_date"] != "" {
+		t.Fatalf("want empty nav, got %+v", p)
+	}
+}
+
+func TestBuyTodayDefaultProductShouldNotShowNegativePnL(t *testing.T) {
+	s := testServer(t)
+	h := s.Router()
+	reg := doJSON(t, h, "POST", "/api/auth/register", map[string]string{"account": "alice", "password": "secret1"}, nil)
+	ck := cookie(reg)
+	buy := doJSON(t, h, "POST", "/api/holdings", map[string]string{
+		"product_code": "AF247494G", "amount": "10000", "occur_date": "2026-09-21",
+	}, ck)
+	if buy.Code != 200 {
+		t.Fatalf("buy %d %s", buy.Code, buy.Body.String())
+	}
+
+	ov := doJSON(t, h, "GET", "/api/overview", nil, ck)
+	if ov.Code != 200 {
+		t.Fatalf("overview %d %s", ov.Code, ov.Body.String())
+	}
+
+	var parsed struct {
+		CumulativePnl string `json:"cumulative_pnl"`
+		DailyPnl      string `json:"daily_pnl"`
+		Items         []struct {
+			Cost        string `json:"cost"`
+			MarketValue string `json:"market_value"`
+			Unrealized  string `json:"unrealized"`
+			Cumulative  string `json:"cumulative"`
+			DailyPnl    string `json:"daily_pnl"`
+			DisplayDate string `json:"display_date"`
+			Shares      string `json:"shares"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(ov.Body.Bytes(), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed.Items) != 1 {
+		t.Fatalf("items %+v", parsed)
+	}
+	it := parsed.Items[0]
+	neg := strings.HasPrefix(it.Unrealized, "-") || strings.HasPrefix(it.Cumulative, "-") ||
+		strings.HasPrefix(it.DailyPnl, "-") || strings.HasPrefix(parsed.CumulativePnl, "-") ||
+		strings.HasPrefix(parsed.DailyPnl, "-")
+	if neg {
+		t.Fatalf("negative pnl after same-day buy: overview_cum=%s overview_day=%s cost=%s mv=%s unrel=%s cum=%s daily=%s display=%s shares=%s",
+			parsed.CumulativePnl, parsed.DailyPnl, it.Cost, it.MarketValue, it.Unrealized, it.Cumulative, it.DailyPnl, it.DisplayDate, it.Shares)
 	}
 }
 

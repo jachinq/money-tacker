@@ -17,6 +17,19 @@ func TestSharesFromCash_specExample(t *testing.T) {
 	}
 }
 
+func TestCashFromShares_defaultProductDoesNotLoseFen(t *testing.T) {
+	cash, _ := ParseYuanToFen("10000")
+	nav, _ := ParseNavToE8("1.0562")
+	shares := SharesFromCash(cash, nav)
+	if shares != 946790380609 {
+		t.Fatalf("shares_e8=%d", shares)
+	}
+	mv := CashFromShares(shares, nav)
+	if mv != cash {
+		t.Fatalf("market fen=%d want %d (truncation would yield 999999)", mv, cash)
+	}
+}
+
 func TestMarketValueRoundTripSameNav(t *testing.T) {
 	cash, _ := ParseYuanToFen("10000")
 	nav, _ := ParseNavToE8("1.0000")

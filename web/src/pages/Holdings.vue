@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { api } from "../api";
+import { pnlClass } from "../pnlClass";
 
 const items = ref<any[]>([]);
 const closed = ref(false);
@@ -26,10 +27,10 @@ onMounted(load);
           </td>
           <td class="mono">{{ it.cost }}</td>
           <td class="mono">{{ it.market_value }}</td>
-          <td class="mono">{{ it.unrealized }}</td>
-          <td class="mono">{{ it.cumulative }}</td>
+          <td class="mono" :class="pnlClass(it.unrealized)">{{ it.unrealized }}</td>
+          <td class="mono" :class="pnlClass(it.cumulative)">{{ it.cumulative }}</td>
           <td>
-            <div class="mono">{{ it.daily_pnl }}</div>
+            <div class="mono" :class="pnlClass(it.daily_pnl)">{{ it.daily_pnl }}</div>
             <div class="muted">展示日 {{ it.display_date || "—" }} · 净值日 {{ it.latest_nav_date || "—" }}</div>
           </td>
         </tr>

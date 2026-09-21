@@ -570,10 +570,24 @@ func (s *Server) handleProduct(w http.ResponseWriter, r *http.Request) {
 	code := strings.ToUpper(chi.URLParam(r, "code"))
 	p, err := s.Store.Product(code)
 	if err != nil {
-		writeErr(w, 404, "PRODUCT_NOT_FOUND", "未找到产品")
+		writeErr(w, 404, "PRODUCT_NOT_FOUND", "未在中国银行代销净值列表中找到该代码")
 		return
 	}
-	writeJSON(w, 200, p)
+	navs := s.navPoints(code)
+	latest, hasLatest := pnl.LatestNav(navs)
+	latestNavS, latestDate := "", ""
+	if hasLatest {
+		latestNavS = money.FormatNav(latest.UnitNavE8)
+		latestDate = latest.Date
+	}
+	writeJSON(w, 200, map[string]any{
+		"product_code":    p.Code,
+		"name":            p.Name,
+		"issuer":          p.Issuer,
+		"listed":          p.Listed,
+		"latest_nav":      latestNavS,
+		"latest_nav_date": latestDate,
+	})
 }
 
 func (s *Server) handleProductNav(w http.ResponseWriter, r *http.Request) {

@@ -30,8 +30,33 @@ func MulDiv(a, b, div int64) int64 {
 		neg = !neg
 		div = -div
 	}
-	hi, lo := bits.Mul64(uint64(a), uint64(b))
-	q, _ := bits.Div64(hi, lo, uint64(div))
+	return finishMulDiv(uint64(a), uint64(b), uint64(div), neg, false)
+}
+
+func MulDivRound(a, b, div int64) int64 {
+	if div == 0 {
+		return 0
+	}
+	neg := (a < 0) != (b < 0)
+	if a < 0 {
+		a = -a
+	}
+	if b < 0 {
+		b = -b
+	}
+	if div < 0 {
+		neg = !neg
+		div = -div
+	}
+	return finishMulDiv(uint64(a), uint64(b), uint64(div), neg, true)
+}
+
+func finishMulDiv(a, b, div uint64, neg, round bool) int64 {
+	hi, lo := bits.Mul64(a, b)
+	q, rem := bits.Div64(hi, lo, div)
+	if round && rem >= (div+1)/2 {
+		q++
+	}
 	out := int64(q)
 	if neg {
 		return -out
@@ -50,7 +75,7 @@ func CashFromShares(sharesE8, navE8 int64) int64 {
 	if sharesE8 <= 0 || navE8 <= 0 {
 		return 0
 	}
-	return MulDiv(sharesE8, navE8, FenScale)
+	return MulDivRound(sharesE8, navE8, FenScale)
 }
 
 func Amortize(costFen, redeemSharesE8, sharesBeforeE8 int64) int64 {

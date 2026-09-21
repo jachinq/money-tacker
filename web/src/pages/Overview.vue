@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { api } from "../api";
+import { pnlClass } from "../pnlClass";
 
 type Item = {
   product_code: string;
@@ -33,13 +34,6 @@ onMounted(async () => {
     err.value = e instanceof Error ? e.message : "加载失败";
   }
 });
-
-function cls(v: string) {
-  const n = Number(v);
-  if (n > 0) return "pos";
-  if (n < 0) return "neg";
-  return "";
-}
 </script>
 
 <template>
@@ -48,10 +42,10 @@ function cls(v: string) {
     <p class="muted">自然日 {{ data.natural_day }}</p>
     <div class="grid">
       <div class="card"><h3>总市值</h3><div class="num">{{ data.market_value }}</div></div>
-      <div class="card"><h3>总累计收益</h3><div class="num" :class="cls(data.cumulative_pnl)">{{ data.cumulative_pnl }}</div></div>
+      <div class="card"><h3>总累计收益</h3><div class="num" :class="pnlClass(data.cumulative_pnl)">{{ data.cumulative_pnl }}</div></div>
       <div class="card">
         <h3>总当日收益（各账户展示日之和）</h3>
-        <div class="num" :class="cls(data.daily_pnl)">{{ data.daily_pnl }}</div>
+        <div class="num" :class="pnlClass(data.daily_pnl)">{{ data.daily_pnl }}</div>
         <p v-if="data.mixed_dates" class="tag">各产品结算日可能不同</p>
       </div>
     </div>
@@ -73,9 +67,9 @@ function cls(v: string) {
             <div class="muted mono">{{ it.product_code }}</div>
           </td>
           <td class="mono">{{ it.market_value }}</td>
-          <td class="mono" :class="cls(it.cumulative)">{{ it.cumulative }}</td>
+          <td class="mono" :class="pnlClass(it.cumulative)">{{ it.cumulative }}</td>
           <td>
-            <div class="mono" :class="cls(it.daily_pnl)">{{ it.daily_pnl }}</div>
+            <div class="mono" :class="pnlClass(it.daily_pnl)">{{ it.daily_pnl }}</div>
             <div class="muted">展示日 {{ it.display_date || "—" }}</div>
           </td>
           <td>
