@@ -2,6 +2,8 @@
 import { onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api, ApiError } from "../api";
+import DailyPnlCalendar from "../components/DailyPnlCalendar.vue";
+import { pnlClass } from "../pnlClass";
 
 const route = useRoute();
 const router = useRouter();
@@ -92,8 +94,19 @@ async function remove() {
     </p>
     <div class="grid">
       <div class="card"><h3>市值</h3><div class="num">{{ holding.market_value }}</div></div>
-      <div class="card"><h3>累计收益</h3><div class="num">{{ holding.cumulative }}</div><div class="muted">未实现 {{ holding.unrealized }} · 已实现 {{ holding.realized }}</div></div>
-      <div class="card"><h3>当日收益</h3><div class="num">{{ holding.daily_pnl }}</div><div class="muted">展示日 {{ holding.display_date || "—" }}</div></div>
+      <div class="card">
+        <h3>累计收益</h3>
+        <div class="num" :class="pnlClass(holding.cumulative)">{{ holding.cumulative }}</div>
+        <div class="muted">
+          未实现 <span class="mono" :class="pnlClass(holding.unrealized)">{{ holding.unrealized }}</span>
+          · 已实现 <span class="mono" :class="pnlClass(holding.realized)">{{ holding.realized }}</span>
+        </div>
+      </div>
+      <div class="card">
+        <h3>当日收益</h3>
+        <div class="num" :class="pnlClass(holding.daily_pnl)">{{ holding.daily_pnl }}</div>
+        <div class="muted">展示日 {{ holding.display_date || "—" }}</div>
+      </div>
     </div>
 
     <div class="row-actions">
@@ -129,18 +142,8 @@ async function remove() {
       </tbody>
     </table>
 
-    <h3>按日收益（日历格，挂零为 0.00）</h3>
-    <p class="muted">与上方「当日收益」口径不同：这里按自然日排列。</p>
-    <table>
-      <thead><tr><th>日期</th><th>当日盈亏</th><th>状态</th><th>单位净值</th></tr></thead>
-      <tbody>
-        <tr v-for="d in days.slice().reverse().slice(0, 40)" :key="d.date">
-          <td>{{ d.date }}</td>
-          <td class="mono">{{ d.pnl }}</td>
-          <td>{{ d.hang_zero ? "挂零" : "已公布" }}</td>
-          <td class="mono">{{ d.has_nav ? d.unit_nav : "—" }}</td>
-        </tr>
-      </tbody>
-    </table>
+    <h3>按日收益（自然日月历）</h3>
+    <p class="muted">与上方「当日收益」口径不同：这里按自然日排列。挂零与已公布且为 0 不是同一格。实线圈为展示日。</p>
+    <DailyPnlCalendar :days="days" :display-date="holding.display_date || ''" />
   </div>
 </template>
