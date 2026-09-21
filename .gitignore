@@ -1,0 +1,9 @@
+data/
+*.exe
+*.db
+web/node_modules/
+web/dist/
+web/.vite/
+.idea/
+.vscode/
+*.log
