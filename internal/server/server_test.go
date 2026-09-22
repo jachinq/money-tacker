@@ -252,3 +252,53 @@ func itoa(n int64) string {
 	}
 	return string(b[i:])
 }
+
+func TestHTTPProdDoesNotForceSecureSessionCookie(t *testing.T) {
+	s := testServer(t)
+	s.Cfg.Env = "prod"
+	s.Cfg.CookieSecure = false
+	h := s.Router()
+	rec := doJSON(t, h, "POST", "/api/auth/register", map[string]string{"account": "alice", "password": "secret1"}, nil)
+	if rec.Code != 200 {
+		t.Fatalf("register %d %s", rec.Code, rec.Body.String())
+	}
+	cks := cookie(rec)
+	if len(cks) == 0 || cks[0].Name != "sid" {
+		t.Fatal("missing sid cookie")
+	}
+	if cks[0].Secure {
+		t.Fatal("HTTP must not set Secure, or browsers drop the cookie")
+	}
+	me := doJSON(t, h, "GET", "/api/me", nil, cks)
+	if me.Code != 200 {
+		t.Fatalf("/api/me %d %s", me.Code, me.Body.String())
+	}
+}
+
+func TestCookieSecureAndForwardedProto(t *testing.T) {
+	s := testServer(t)
+	s.Cfg.CookieSecure = true
+	h := s.Router()
+	rec := doJSON(t, h, "POST", "/api/auth/register", map[string]string{"account": "alice", "password": "secret1"}, nil)
+	if rec.Code != 200 {
+		t.Fatalf("register %d %s", rec.Code, rec.Body.String())
+	}
+	if cks := cookie(rec); len(cks) == 0 || !cks[0].Secure {
+		t.Fatal("COOKIE_SECURE=true must set Secure")
+	}
+
+	s2 := testServer(t)
+	var buf bytes.Buffer
+	_ = json.NewEncoder(&buf).Encode(map[string]string{"account": "bob", "password": "secret1"})
+	req := httptest.NewRequest("POST", "/api/auth/register", &buf)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	rec2 := httptest.NewRecorder()
+	s2.Router().ServeHTTP(rec2, req)
+	if rec2.Code != 200 {
+		t.Fatalf("register via https proto %d %s", rec2.Code, rec2.Body.String())
+	}
+	if cks := cookie(rec2); len(cks) == 0 || !cks[0].Secure {
+		t.Fatal("X-Forwarded-Proto=https must set Secure")
+	}
+}

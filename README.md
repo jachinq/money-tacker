@@ -118,12 +118,25 @@ docker compose down
 docker compose up -d --build --force-recreate
 ```
 
-Linux 上若容器写不了 `data/`，把目录属主改成镜像内用户：
+Linux 上若日志出现 `unable to open database file (14)`，这是 **SQLite 打不开挂载目录里的文件**，不是采集/登录逻辑出错，也一般不是防火墙或安全软件拦截。原因是容器进程用户是 `65532`，而 `./data` 常常被 Docker 建成 `root:root`（或属主是你的登录 uid），进程没有写权限。
+
+处理（在仓库根目录、不要删已有库文件）：
 
 ```bash
 mkdir -p data
 sudo chown -R 65532:65532 data
+docker compose up -d
 ```
+
+若希望容器用你当前 Linux 用户写 `data/`：
+
+```bash
+mkdir -p data
+sudo chown -R "$(id -u):$(id -g)" data
+PUID="$(id -u)" PGID="$(id -g)" docker compose up -d
+```
+
+RHEL / CentOS / Fedora 上若 chown 之后仍是 14，多半是 SELinux：compose 已加 `:Z` 给挂载打容器标签；改完 yml 后需要 `docker compose up -d --force-recreate`。
 
 需要开放注册或管理令牌时，在 `docker-compose.yml` 的 `environment` 里增加对应变量后重新 `up`。构建参数也可覆盖镜像源，例如：
 
@@ -135,7 +148,7 @@ docker compose build --build-arg GOPROXY=https://goproxy.cn,direct --build-arg N
 
 ```bash
 docker build -t money-tacker:local .
-docker run --rm -p 8080:8080 -v "${PWD}/data:/app/data" money-tacker:local
+docker run --rm -p 8080:8080 -v "${PWD}/data:/app/data:Z" --user 65532:65532 money-tacker:local
 ```
 
 ## 配置
@@ -145,7 +158,8 @@ docker run --rm -p 8080:8080 -v "${PWD}/data:/app/data" money-tacker:local
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
 | `APP_ADDR` | `:8080` | 监听地址 |
-| `APP_ENV` | `dev` | 环境名 |
+| `APP_ENV` | `dev` | 环境名（不再用来给 Cookie 加 Secure） |
+| `COOKIE_SECURE` | `false` | 为 true 时 Session Cookie 带 `Secure`。HTTP 直连必须保持 false，否则浏览器不保存 Cookie，注册/登录后 `/api/me` 会 401。HTTPS 反代可设 true，或让反代带上 `X-Forwarded-Proto: https` |
 | `APP_TZ` | `Asia/Shanghai` | 自然日、cron、展示日所用时区 |
 | `SQLITE_PATH` | `data/app.db` | SQLite 文件 |
 | `SESSION_HOURS` | `168` | Session 有效小时数 |

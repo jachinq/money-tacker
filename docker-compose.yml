@@ -13,10 +13,14 @@ services:
     container_name: money-tacker
     ports:
       - "8080:8080"
+    # 容器内用户是 65532。Linux bind mount 若属主是 root/你的账号，SQLite 会报 (14) CANTOPEN。
+    # 先 chown，或启动前：PUID=$(id -u) PGID=$(id -g) 且 data 目录属主就是该用户。
+    user: "${PUID:-65532}:${PGID:-65532}"
     volumes:
-      - ./data:/app/data
+      - ./data:/app/data:Z
     environment:
       APP_ENV: prod
+      COOKIE_SECURE: "false"
       APP_ADDR: ":8080"
       APP_TZ: Asia/Shanghai
       SQLITE_PATH: data/app.db

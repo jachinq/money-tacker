@@ -16,7 +16,7 @@ func Open(path string, migrations fs.FS, dir string) (*sql.DB, error) {
 		dirn := filepath.Dir(path)
 		if dirn != "." && dirn != "" {
 			if err := os.MkdirAll(dirn, 0o755); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("create sqlite dir %q: %w", dirn, err)
 			}
 		}
 	}
@@ -29,11 +29,12 @@ func Open(path string, migrations fs.FS, dir string) (*sql.DB, error) {
 	}
 	sqlDB, err := sql.Open("sqlite", dsn)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open sqlite %q: %w", path, err)
 	}
 	sqlDB.SetMaxOpenConns(1)
 	if _, err := sqlDB.Exec(`PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;`); err != nil {
-		return nil, err
+		_ = sqlDB.Close()
+		return nil, fmt.Errorf("open sqlite %q: %w (data directory must be writable by the process user)", path, err)
 	}
 	goose.SetBaseFS(migrations)
 	if err := goose.SetDialect("sqlite3"); err != nil {

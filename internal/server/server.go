@@ -102,14 +102,27 @@ func (s *Server) auth(next http.Handler) http.Handler {
 	})
 }
 
-func (s *Server) setSession(w http.ResponseWriter, token string) {
+func (s *Server) sessionCookieSecure(r *http.Request) bool {
+	if s.Cfg.CookieSecure {
+		return true
+	}
+	if r != nil && r.TLS != nil {
+		return true
+	}
+	if r != nil && strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+		return true
+	}
+	return false
+}
+
+func (s *Server) setSession(w http.ResponseWriter, r *http.Request, token string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "sid",
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   s.Cfg.Env == "prod",
+		Secure:   s.sessionCookieSecure(r),
 		MaxAge:   s.Cfg.SessionHours * 3600,
 	})
 }
@@ -147,7 +160,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, "INTERNAL", "服务器错误")
 		return
 	}
-	s.setSession(w, tok)
+	s.setSession(w, r, tok)
 	writeJSON(w, 200, map[string]any{"account": u.Account})
 }
 
@@ -170,7 +183,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, "INTERNAL", "服务器错误")
 		return
 	}
-	s.setSession(w, tok)
+	s.setSession(w, r, tok)
 	writeJSON(w, 200, map[string]any{"account": u.Account})
 }
 
@@ -178,7 +191,15 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie("sid"); err == nil {
 		_ = s.Store.DeleteSession(c.Value)
 	}
-	http.SetCookie(w, &http.Cookie{Name: "sid", Value: "", Path: "/", MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{
+		Name:     "sid",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   s.sessionCookieSecure(r),
+	})
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 

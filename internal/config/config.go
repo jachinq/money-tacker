@@ -19,6 +19,7 @@ type Config struct {
 	BcryptCost     int
 	AdminToken     string
 	CrawlBaseURL   string
+	CookieSecure   bool
 }
 
 func Load() Config {
@@ -39,6 +40,7 @@ func Load() Config {
 		BcryptCost:     envInt("BCRYPT_COST", 12),
 		AdminToken:     env("APP_ADMIN_TOKEN", ""),
 		CrawlBaseURL:   env("CRAWL_BASE_URL", "https://www.bankofchina.com/sourcedb/srfd6_2024/"),
+		CookieSecure:   envBool("COOKIE_SECURE", false),
 	}
 }
 
