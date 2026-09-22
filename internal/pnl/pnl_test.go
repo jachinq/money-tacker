@@ -261,3 +261,62 @@ func TestWindowPctZeroStartIsInsufficient(t *testing.T) {
 		t.Fatal("zero start nav is 窗口历史不足")
 	}
 }
+
+func TestCumulativeReturnE4IsCumOverBuy(t *testing.T) {
+	got, ok := CumulativeReturnE4(100_000, 1_000_000)
+	if !ok || got != 1000 {
+		t.Fatalf("got %d ok=%v want 1000 (10.00%%)", got, ok)
+	}
+}
+
+func TestCumulativeReturnE4MissingWhenBuyZero(t *testing.T) {
+	if _, ok := CumulativeReturnE4(0, 0); ok {
+		t.Fatal("no 累计收益率 when 累计买入 is 0")
+	}
+}
+
+func TestAnnualizedUsesOccupancySegmentNotWholeLedger(t *testing.T) {
+	wave1Buy := buy(1, "2026-01-01", "10000", "1.0000", "2026-01-01")
+	wave1Redeem := redeemShares(2, "2026-01-31", wave1Buy.SharesE8, "1.1000", "2026-01-31")
+	wave2Buy := buy(3, "2026-09-01", "10000", "1.0000", "2026-09-01")
+	entries := []Entry{wave1Buy, wave1Redeem, wave2Buy}
+	latest := nav("2026-09-11", "1.0100")
+
+	st, err := Replay(entries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mv := money.CashFromShares(st.SharesE8, latest.UnitNavE8)
+	cum := mv + st.TotalRedeemFen - st.TotalBuyFen
+	whole, ok := CumulativeReturnE4(cum, st.TotalBuyFen)
+	if !ok || whole != 550 {
+		t.Fatalf("整本账累计收益率 e4=%d ok=%v want 550 (5.50%%)", whole, ok)
+	}
+
+	ann, ok := AnnualizedCumulativeReturnE4(entries, latest)
+	if !ok {
+		t.Fatal("want 年化累计收益率")
+	}
+	if ann != 3650 {
+		t.Fatalf("年化 e4=%d want 3650 (36.50%%); must ignore wave1 profit and empty days", ann)
+	}
+}
+
+func TestAnnualizedClosedSegmentEndsOnLastRedeemNotLatestNav(t *testing.T) {
+	b := buy(1, "2026-01-01", "10000", "1.0000", "2026-01-01")
+	r := redeemShares(2, "2026-01-31", b.SharesE8, "1.1000", "2026-01-31")
+	ann, ok := AnnualizedCumulativeReturnE4([]Entry{b, r}, nav("2026-09-11", "1.2000"))
+	if !ok {
+		t.Fatal("closed account still has 年化累计收益率")
+	}
+	if ann != 12167 {
+		t.Fatalf("年化 e4=%d want 12167 (10%% × 365/30, rounded)", ann)
+	}
+}
+
+func TestAnnualizedMissingWhenSameDay(t *testing.T) {
+	b := buy(1, "2026-09-11", "10000", "1.0000", "2026-09-11")
+	if _, ok := AnnualizedCumulativeReturnE4([]Entry{b}, nav("2026-09-11", "1.0100")); ok {
+		t.Fatal("N=0 must not produce 年化累计收益率")
+	}
+}

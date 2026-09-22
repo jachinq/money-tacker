@@ -537,24 +537,26 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, "INTERNAL", "服务器错误")
 		return
 	}
-	var mv, cum, day int64
+	var mv, cum, day, buyFen int64
 	dates := map[string]struct{}{}
 	for _, it := range items {
 		mv += it.MarketValueFen
 		cum += it.CumulativeFen
 		day += it.DailyPnlFen
+		buyFen += it.TotalBuyFen
 		if it.DisplayDate != "" {
 			dates[it.DisplayDate] = struct{}{}
 		}
 	}
 	writeJSON(w, 200, map[string]any{
-		"market_value":   money.FormatFen(mv),
-		"cumulative_pnl": money.FormatFen(cum),
-		"daily_pnl":      money.FormatFen(day),
-		"mixed_dates":    len(dates) > 1,
-		"disclaimer":     "收益估算，以发行机构/代销机构结算为准",
-		"items":          items,
-		"natural_day":    s.today(),
+		"market_value":      money.FormatFen(mv),
+		"cumulative_pnl":    money.FormatFen(cum),
+		"cumulative_return": formatPctE4(pnl.CumulativeReturnE4(cum, buyFen)),
+		"daily_pnl":         money.FormatFen(day),
+		"mixed_dates":       len(dates) > 1,
+		"disclaimer":        "收益估算，以发行机构/代销机构结算为准",
+		"items":             items,
+		"natural_day":       s.today(),
 	})
 }
 
@@ -709,25 +711,28 @@ func (s *Server) adminOK(r *http.Request) bool {
 }
 
 type holdingView struct {
-	ProductCode    string `json:"product_code"`
-	Name           string `json:"name"`
-	Listed         bool   `json:"listed"`
-	Shares         string `json:"shares"`
-	Cost           string `json:"cost"`
-	MarketValue    string `json:"market_value"`
-	Unrealized     string `json:"unrealized"`
-	Realized       string `json:"realized"`
-	Cumulative     string `json:"cumulative"`
-	DailyPnl       string `json:"daily_pnl"`
-	DisplayDate    string `json:"display_date"`
-	LatestNav      string `json:"latest_nav"`
-	LatestNavDate  string `json:"latest_nav_date"`
-	HangZero       bool   `json:"hang_zero"`
-	StaleDays      int    `json:"stale_days"`
-	Closed         bool   `json:"closed"`
-	MarketValueFen int64  `json:"-"`
-	CumulativeFen  int64  `json:"-"`
-	DailyPnlFen    int64  `json:"-"`
+	ProductCode                string `json:"product_code"`
+	Name                       string `json:"name"`
+	Listed                     bool   `json:"listed"`
+	Shares                     string `json:"shares"`
+	Cost                       string `json:"cost"`
+	MarketValue                string `json:"market_value"`
+	Unrealized                 string `json:"unrealized"`
+	Realized                   string `json:"realized"`
+	Cumulative                 string `json:"cumulative"`
+	DailyPnl                   string `json:"daily_pnl"`
+	DisplayDate                string `json:"display_date"`
+	LatestNav                  string `json:"latest_nav"`
+	LatestNavDate              string `json:"latest_nav_date"`
+	HangZero                   bool   `json:"hang_zero"`
+	StaleDays                  int    `json:"stale_days"`
+	Closed                     bool   `json:"closed"`
+	CumulativeReturn           string `json:"cumulative_return"`
+	AnnualizedCumulativeReturn string `json:"annualized_cumulative_return"`
+	MarketValueFen             int64  `json:"-"`
+	CumulativeFen              int64  `json:"-"`
+	DailyPnlFen                int64  `json:"-"`
+	TotalBuyFen                int64  `json:"-"`
 }
 
 func (s *Server) holdingViews(userID int64, includeClosed bool) ([]holdingView, error) {
@@ -779,6 +784,10 @@ func (s *Server) holdingViews(userID int64, includeClosed bool) ([]holdingView, 
 		if hasLatest {
 			stale = pnl.DaysBetween(latest.Date, today)
 		}
+		latestPt := pnl.NavPoint{}
+		if hasLatest {
+			latestPt = latest
+		}
 		out = append(out, holdingView{
 			ProductCode: h.ProductCode, Name: p.Name, Listed: p.Listed,
 			Shares: money.FormatShares(st.SharesE8), Cost: money.FormatFen(st.CostFen),
@@ -787,7 +796,9 @@ func (s *Server) holdingViews(userID int64, includeClosed bool) ([]holdingView, 
 			DailyPnl: money.FormatFen(day), DisplayDate: disp,
 			LatestNav: latestNavS, LatestNavDate: latestDate,
 			HangZero: !hasY, StaleDays: stale, Closed: st.SharesE8 == 0,
-			MarketValueFen: mv, CumulativeFen: cum, DailyPnlFen: day,
+			CumulativeReturn:           formatPctE4(pnl.CumulativeReturnE4(cum, st.TotalBuyFen)),
+			AnnualizedCumulativeReturn: formatPctE4(pnl.AnnualizedCumulativeReturnE4(entries, latestPt)),
+			MarketValueFen:             mv, CumulativeFen: cum, DailyPnlFen: day, TotalBuyFen: st.TotalBuyFen,
 		})
 	}
 	return out, nil
@@ -862,6 +873,13 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+func formatPctE4(e4 int64, ok bool) string {
+	if !ok {
+		return ""
+	}
+	return money.FormatSignedPctE4(e4)
 }
 
 func writeErr(w http.ResponseWriter, status int, code, msg string) {

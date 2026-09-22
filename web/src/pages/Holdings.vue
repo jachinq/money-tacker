@@ -17,8 +17,9 @@ onMounted(load);
   <div>
     <h2>持仓账户</h2>
     <label><input type="checkbox" v-model="closed" @change="load" /> 含已清仓</label>
+    <div class="table-scroll">
     <table>
-      <thead><tr><th>产品</th><th>剩余成本</th><th>市值</th><th>未实现</th><th>累计</th><th>当日收益</th></tr></thead>
+      <thead><tr><th>产品</th><th>剩余成本</th><th>市值</th><th>未实现</th><th>累计</th><th>累计收益率</th><th>年化累计收益率</th><th>当日收益</th></tr></thead>
       <tbody>
         <tr v-for="it in items" :key="it.product_code">
           <td>
@@ -29,6 +30,8 @@ onMounted(load);
           <td class="mono">{{ it.market_value }}</td>
           <td class="mono" :class="pnlClass(it.unrealized)">{{ it.unrealized }}</td>
           <td class="mono" :class="pnlClass(it.cumulative)">{{ it.cumulative }}</td>
+          <td class="mono" :class="pnlClass(it.cumulative_return || '0')">{{ it.cumulative_return ? it.cumulative_return + "%" : "—" }}</td>
+          <td class="mono" :class="pnlClass(it.annualized_cumulative_return || '0')">{{ it.annualized_cumulative_return ? it.annualized_cumulative_return + "%" : "—" }}</td>
           <td>
             <div class="mono" :class="pnlClass(it.daily_pnl)">{{ it.daily_pnl }}</div>
             <div class="muted">展示日 {{ it.display_date || "—" }} · 净值日 {{ it.latest_nav_date || "—" }}</div>
@@ -36,5 +39,6 @@ onMounted(load);
         </tr>
       </tbody>
     </table>
+    </div>
   </div>
 </template>

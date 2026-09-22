@@ -304,6 +304,79 @@ func WindowPctE4(navs []NavPoint, days int) (int64, bool) {
 	return money.MulDivRound(end.UnitNavE8-start.UnitNavE8, 10000, start.UnitNavE8), true
 }
 
+// CumulativeReturnE4 is 累计收益率 in hundredths of a percent (10.00% => 1000).
+func CumulativeReturnE4(cumulativeFen, totalBuyFen int64) (int64, bool) {
+	if totalBuyFen == 0 {
+		return 0, false
+	}
+	return money.MulDivRound(cumulativeFen, 10000, totalBuyFen), true
+}
+
+func occupancySegment(entries []Entry) []Entry {
+	active := Active(entries)
+	start := -1
+	var shares int64
+	for i, e := range active {
+		switch e.Kind {
+		case KindBuy:
+			if shares == 0 {
+				start = i
+			}
+			shares += e.SharesE8
+		case KindRedeem:
+			shares -= e.SharesE8
+		}
+	}
+	if start < 0 {
+		return nil
+	}
+	return active[start:]
+}
+
+func lastRedeemOccur(entries []Entry) string {
+	var d string
+	for _, e := range entries {
+		if e.Kind == KindRedeem {
+			d = e.OccurDate
+		}
+	}
+	return d
+}
+
+// AnnualizedCumulativeReturnE4 is 年化累计收益率 for the current occupancy segment.
+func AnnualizedCumulativeReturnE4(entries []Entry, latest NavPoint) (int64, bool) {
+	seg := occupancySegment(entries)
+	if len(seg) == 0 {
+		return 0, false
+	}
+	st, err := Replay(seg)
+	if err != nil {
+		return 0, false
+	}
+	var end string
+	var cum int64
+	if st.SharesE8 == 0 {
+		end = lastRedeemOccur(seg)
+		cum = st.RealizedFen
+	} else {
+		if latest.Date == "" || latest.UnitNavE8 <= 0 {
+			return 0, false
+		}
+		end = latest.Date
+		mv := money.CashFromShares(st.SharesE8, latest.UnitNavE8)
+		cum = mv - st.CostFen + st.RealizedFen
+	}
+	n := DaysBetween(seg[0].OccurDate, end)
+	if n <= 0 {
+		return 0, false
+	}
+	rate, ok := CumulativeReturnE4(cum, st.TotalBuyFen)
+	if !ok {
+		return 0, false
+	}
+	return money.MulDivRound(rate, 365, int64(n)), true
+}
+
 func addDays(iso string, n int) (string, error) {
 	t, err := time.ParseInLocation("2006-01-02", iso, time.UTC)
 	if err != nil {

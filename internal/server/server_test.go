@@ -623,3 +623,54 @@ func TestAdditionalBuyIgnoresCumulativeUsesManualNav(t *testing.T) {
 		t.Fatalf("append must use 手工净值, got %+v", created)
 	}
 }
+
+func TestHoldingsAndOverviewCumulativeReturn(t *testing.T) {
+	s := testServer(t)
+	if err := s.Store.UpsertSnapshot("AF247494G", "2026-09-11", 100000000, 0, 0, "", s.Now().Format(time.RFC3339)); err != nil {
+		t.Fatal(err)
+	}
+	h := s.Router()
+	reg := doJSON(t, h, "POST", "/api/auth/register", map[string]string{"account": "alice", "password": "secret1"}, nil)
+	ck := cookie(reg)
+	buy := doJSON(t, h, "POST", "/api/holdings", map[string]string{
+		"product_code": "AF247494G", "amount": "10000", "occur_date": "2026-09-11",
+	}, ck)
+	if buy.Code != 200 {
+		t.Fatalf("buy %d %s", buy.Code, buy.Body.String())
+	}
+	list := doJSON(t, h, "GET", "/api/holdings", nil, ck)
+	if list.Code != 200 {
+		t.Fatalf("list %d %s", list.Code, list.Body.String())
+	}
+	var listed struct {
+		Items []struct {
+			CumulativeReturn           string `json:"cumulative_return"`
+			AnnualizedCumulativeReturn string `json:"annualized_cumulative_return"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(list.Body.Bytes(), &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Items) != 1 {
+		t.Fatalf("items %+v", listed)
+	}
+	if listed.Items[0].CumulativeReturn != "+5.62" {
+		t.Fatalf("累计收益率 %s want +5.62", listed.Items[0].CumulativeReturn)
+	}
+	if listed.Items[0].AnnualizedCumulativeReturn != "+293.04" {
+		t.Fatalf("年化累计收益率 %s want +293.04", listed.Items[0].AnnualizedCumulativeReturn)
+	}
+	ov := doJSON(t, h, "GET", "/api/overview", nil, ck)
+	if ov.Code != 200 {
+		t.Fatalf("overview %d %s", ov.Code, ov.Body.String())
+	}
+	var parsed struct {
+		CumulativeReturn string `json:"cumulative_return"`
+	}
+	if err := json.Unmarshal(ov.Body.Bytes(), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if parsed.CumulativeReturn != "+5.62" {
+		t.Fatalf("总累计收益率 %s want +5.62", parsed.CumulativeReturn)
+	}
+}

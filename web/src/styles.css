@@ -22,7 +22,7 @@ nav a { margin-left: 16px; color: var(--muted); text-decoration: none; }
 nav a.router-link-active { color: var(--ink); }
 .muted { color: var(--muted); }
 .disclaimer { font-size: 13px; color: var(--muted); margin: 8px 0 24px; }
-.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
 .card { background: var(--paper); border: 1px solid var(--line); padding: 16px 18px; }
 .card h3 { margin: 0 0 6px; font-size: 13px; color: var(--muted); font-weight: 500; }
 .card .num { font-family: var(--mono); font-size: 26px; }

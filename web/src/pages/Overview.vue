@@ -20,6 +20,7 @@ type Item = {
 const data = ref<{
   market_value: string;
   cumulative_pnl: string;
+  cumulative_return: string;
   daily_pnl: string;
   mixed_dates: boolean;
   natural_day: string;
@@ -43,6 +44,10 @@ onMounted(async () => {
     <div class="grid">
       <div class="card"><h3>总市值</h3><div class="num">{{ data.market_value }}</div></div>
       <div class="card"><h3>总累计收益</h3><div class="num" :class="pnlClass(data.cumulative_pnl)">{{ data.cumulative_pnl }}</div></div>
+      <div class="card">
+        <h3>总累计收益率</h3>
+        <div class="num" :class="pnlClass(data.cumulative_return || '0')">{{ data.cumulative_return ? data.cumulative_return + "%" : "—" }}</div>
+      </div>
       <div class="card">
         <h3>总当日收益（各账户展示日之和）</h3>
         <div class="num" :class="pnlClass(data.daily_pnl)">{{ data.daily_pnl }}</div>

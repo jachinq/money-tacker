@@ -107,6 +107,14 @@ async function remove() {
         </div>
       </div>
       <div class="card">
+        <h3>累计收益率</h3>
+        <div class="num" :class="pnlClass(holding.cumulative_return || '0')">{{ holding.cumulative_return ? holding.cumulative_return + "%" : "—" }}</div>
+      </div>
+      <div class="card">
+        <h3>年化累计收益率</h3>
+        <div class="num" :class="pnlClass(holding.annualized_cumulative_return || '0')">{{ holding.annualized_cumulative_return ? holding.annualized_cumulative_return + "%" : "—" }}</div>
+      </div>
+      <div class="card">
         <h3>当日收益</h3>
         <div class="num" :class="pnlClass(holding.daily_pnl)">{{ holding.daily_pnl }}</div>
         <div class="muted">展示日 {{ holding.display_date || "—" }}</div>
