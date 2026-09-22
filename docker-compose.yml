@@ -1,0 +1,23 @@
+name: money-tacker
+
+services:
+  app:
+    image: money-tacker:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        GOPROXY: https://goproxy.cn,direct
+        NPM_REGISTRY: https://registry.npmmirror.com
+    pull_policy: never
+    container_name: money-tacker
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+    environment:
+      APP_ENV: prod
+      APP_ADDR: ":8080"
+      APP_TZ: Asia/Shanghai
+      SQLITE_PATH: data/app.db
+    restart: unless-stopped

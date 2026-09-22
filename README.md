@@ -36,6 +36,8 @@ internal/            HTTP、采集、收益计算、存储
 migrations/          SQLite 迁移（embed）
 web/                 Vue SPA
 docs/                PRD、技术设计、ADR
+Dockerfile           多阶段生产镜像
+docker-compose.yml   本机构建 money-tacker:local 并启动
 CONTEXT.md           领域用语
 ```
 
@@ -84,6 +86,57 @@ go run ./cmd/server
 ```
 
 当仓库根目录存在 `web/dist` 时，服务端会托管 SPA，可直接访问 `APP_ADDR`（默认 `http://127.0.0.1:8080`）。
+
+## Docker 部署
+
+镜像在本机多阶段构建：前端 `pnpm` 走 `https://registry.npmmirror.com`，Go module 走 `https://goproxy.cn`；运行时是 `scratch`（仅二进制、CA 证书、上海时区、`web/dist`）。`docker-compose.yml` 将产物打成 `money-tacker:local`，并设置 `pull_policy: never`，**不会从仓库拉取同名镜像**，只启动这次（或此前）本机构建的标签。
+
+首次或代码变更后：
+
+```bash
+docker compose up -d --build
+```
+
+之后若镜像已存在、无需重建：
+
+```bash
+docker compose up -d
+```
+
+浏览器打开 `http://127.0.0.1:8080`。SQLite 落在仓库旁的 `data/`（已挂载到容器 `/app/data`）。首次启动会全量采集中行代销目录，日志里可能较安静地跑一段时间。
+
+常用命令：
+
+```bash
+docker compose logs -f app
+docker compose down
+```
+
+重建并换用新镜像（不删宿主机 `data/`）：
+
+```bash
+docker compose up -d --build --force-recreate
+```
+
+Linux 上若容器写不了 `data/`，把目录属主改成镜像内用户：
+
+```bash
+mkdir -p data
+sudo chown -R 65532:65532 data
+```
+
+需要开放注册或管理令牌时，在 `docker-compose.yml` 的 `environment` 里增加对应变量后重新 `up`。构建参数也可覆盖镜像源，例如：
+
+```bash
+docker compose build --build-arg GOPROXY=https://goproxy.cn,direct --build-arg NPM_REGISTRY=https://registry.npmmirror.com
+```
+
+单独构建（不经 Compose）时，同样打本地标签再跑：
+
+```bash
+docker build -t money-tacker:local .
+docker run --rm -p 8080:8080 -v "${PWD}/data:/app/data" money-tacker:local
+```
 
 ## 配置
 
