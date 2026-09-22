@@ -145,3 +145,49 @@ func TestVoidedEntryIgnored(t *testing.T) {
 		t.Fatalf("st=%+v err=%v", st, err)
 	}
 }
+
+func TestWindowPctUsesNavOnOrBeforeStart(t *testing.T) {
+	navs := []NavPoint{
+		nav("2026-08-15", "1.0000"),
+		nav("2026-09-18", "1.0562"),
+	}
+	got, ok := WindowPctE4(navs, 30)
+	if !ok {
+		t.Fatal("want window ok")
+	}
+	if got != 562 {
+		t.Fatalf("pct e4=%d want 562 (5.62%%)", got)
+	}
+}
+
+func TestWindowPctInsufficientHistory(t *testing.T) {
+	navs := []NavPoint{nav("2026-09-18", "1.0562")}
+	if _, ok := WindowPctE4(navs, 30); ok {
+		t.Fatal("single point cannot fill 30-day start")
+	}
+}
+
+func TestWindowPctSkipsHangZeroStartDate(t *testing.T) {
+	// 2026-09-21 minus 30 = 2026-08-22 (Saturday). Use Friday 08-21.
+	navs := []NavPoint{
+		nav("2026-08-21", "1.0000"),
+		nav("2026-09-21", "1.0100"),
+	}
+	got, ok := WindowPctE4(navs, 30)
+	if !ok {
+		t.Fatal("hang-zero start must still resolve")
+	}
+	if got != 100 {
+		t.Fatalf("pct e4=%d want 100 (1.00%%)", got)
+	}
+}
+
+func TestWindowPctZeroStartIsInsufficient(t *testing.T) {
+	navs := []NavPoint{
+		{Date: "2026-08-15", UnitNavE8: 0},
+		nav("2026-09-18", "1.0562"),
+	}
+	if _, ok := WindowPctE4(navs, 30); ok {
+		t.Fatal("zero start nav is 窗口历史不足")
+	}
+}

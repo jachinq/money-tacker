@@ -105,6 +105,15 @@ func FormatShares(sharesE8 int64) string {
 	return formatFixed(sharesE8, 8)
 }
 
+// FormatSignedPctE4 formats hundredths of a percent with a sign: 562 => "+5.62".
+func FormatSignedPctE4(e4 int64) string {
+	s := formatFixed(e4, 2)
+	if e4 > 0 {
+		return "+" + s
+	}
+	return s
+}
+
 func parseFixed(s string, scale int) (int64, bool) {
 	if s == "" {
 		return 0, false

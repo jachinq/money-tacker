@@ -59,3 +59,15 @@ func TestAmortizeHalf(t *testing.T) {
 		t.Fatalf("got %d", got)
 	}
 }
+
+func TestFormatSignedPctE4(t *testing.T) {
+	if FormatSignedPctE4(562) != "+5.62" {
+		t.Fatalf("got %s", FormatSignedPctE4(562))
+	}
+	if FormatSignedPctE4(-100) != "-1.00" {
+		t.Fatalf("got %s", FormatSignedPctE4(-100))
+	}
+	if FormatSignedPctE4(0) != "0.00" {
+		t.Fatalf("got %s", FormatSignedPctE4(0))
+	}
+}

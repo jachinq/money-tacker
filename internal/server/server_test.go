@@ -253,6 +253,200 @@ func itoa(n int64) string {
 	return string(b[i:])
 }
 
+func TestProductCatalog(t *testing.T) {
+	s := testServer(t)
+	h := s.Router()
+	anon := doJSON(t, h, "GET", "/api/products", nil, nil)
+	if anon.Code != 401 {
+		t.Fatalf("anon %d", anon.Code)
+	}
+
+	reg := doJSON(t, h, "POST", "/api/auth/register", map[string]string{"account": "alice", "password": "secret1"}, nil)
+	ck := cookie(reg)
+	now := s.Now()
+	fetched := now.Format(time.RFC3339)
+
+	if err := s.Store.UpsertProduct("HI360001", "高窗口产品", "甲行", 1, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Store.UpsertSnapshot("HI360001", "2025-09-01", 100000000, 0, 0, "", fetched); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Store.UpsertSnapshot("HI360001", "2026-09-18", 110000000, 0, 0, "", fetched); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Store.UpsertProduct("LO360001", "低窗口产品", "乙行", 1, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Store.UpsertSnapshot("LO360001", "2025-09-01", 100000000, 0, 0, "", fetched); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Store.UpsertSnapshot("LO360001", "2026-09-18", 105000000, 0, 0, "", fetched); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Store.UpsertProduct("GONE0001", "已不在架", "丙行", 1, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Store.DB.Exec(`UPDATE product SET listed=0 WHERE code=?`, "GONE0001"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Store.UpsertProduct("NONAV002", "无净值在架", "测试", 1, now); err != nil {
+		t.Fatal(err)
+	}
+
+	buy := doJSON(t, h, "POST", "/api/holdings", map[string]string{
+		"product_code": "HI360001", "amount": "10000", "occur_date": "2026-09-18",
+	}, ck)
+	if buy.Code != 200 {
+		t.Fatalf("buy %d %s", buy.Code, buy.Body.String())
+	}
+	if err := s.Store.UpsertProduct("CLOSED01", "已清仓产品", "甲行", 1, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Store.UpsertSnapshot("CLOSED01", "2026-09-18", 100000000, 0, 0, "", fetched); err != nil {
+		t.Fatal(err)
+	}
+	openClosed := doJSON(t, h, "POST", "/api/holdings", map[string]string{
+		"product_code": "CLOSED01", "amount": "10000", "occur_date": "2026-09-18",
+	}, ck)
+	if openClosed.Code != 200 {
+		t.Fatalf("open closed %d %s", openClosed.Code, openClosed.Body.String())
+	}
+	red := doJSON(t, h, "POST", "/api/holdings/CLOSED01/redeems", map[string]any{
+		"all": true, "occur_date": "2026-09-18",
+	}, ck)
+	if red.Code != 200 {
+		t.Fatalf("redeem %d %s", red.Code, red.Body.String())
+	}
+
+	type item struct {
+		ProductCode   string  `json:"product_code"`
+		Name          string  `json:"name"`
+		Issuer        string  `json:"issuer"`
+		Listed        bool    `json:"listed"`
+		LatestNav     string  `json:"latest_nav"`
+		LatestNavDate string  `json:"latest_nav_date"`
+		Holding       string  `json:"holding"`
+		Ret30         *string `json:"ret_30"`
+		Ret90         *string `json:"ret_90"`
+		Ret180        *string `json:"ret_180"`
+		Ret360        *string `json:"ret_360"`
+		Ret730        *string `json:"ret_730"`
+	}
+	type catalog struct {
+		Items    []item `json:"items"`
+		Total    int    `json:"total"`
+		Page     int    `json:"page"`
+		PageSize int    `json:"page_size"`
+		Empty    string `json:"empty"`
+	}
+
+	parse := func(path string) catalog {
+		t.Helper()
+		rec := doJSON(t, h, "GET", path, nil, ck)
+		if rec.Code != 200 {
+			t.Fatalf("%s %d %s", path, rec.Code, rec.Body.String())
+		}
+		var out catalog
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+
+	def := parse("/api/products")
+	if def.Page != 1 || def.PageSize != 50 {
+		t.Fatalf("page %+v", def)
+	}
+	if def.Empty != "" {
+		t.Fatalf("empty hint %+v", def)
+	}
+	codes := make([]string, len(def.Items))
+	hold := map[string]string{}
+	for i, it := range def.Items {
+		codes[i] = it.ProductCode
+		hold[it.ProductCode] = it.Holding
+		if !it.Listed && it.ProductCode == "GONE0001" {
+			t.Fatal("default must hide unlisted")
+		}
+	}
+	if len(codes) < 2 || codes[0] != "HI360001" || codes[1] != "LO360001" {
+		t.Fatalf("default 360-day desc got %v", codes)
+	}
+	if def.Items[0].Ret360 == nil || *def.Items[0].Ret360 != "+10.00" {
+		t.Fatalf("hi 360 %+v", def.Items[0].Ret360)
+	}
+	if def.Items[1].Ret360 == nil || *def.Items[1].Ret360 != "+5.00" {
+		t.Fatalf("lo 360 %+v", def.Items[1].Ret360)
+	}
+	if hold["HI360001"] != "open" || hold["CLOSED01"] != "closed" || hold["LO360001"] != "none" {
+		t.Fatalf("holding %v", hold)
+	}
+	var nonav *item
+	for i := range def.Items {
+		if def.Items[i].ProductCode == "NONAV002" {
+			nonav = &def.Items[i]
+		}
+	}
+	if nonav == nil {
+		t.Fatal("product with no nav must still appear")
+	}
+	if nonav.LatestNav != "" || nonav.LatestNavDate != "" || nonav.Ret30 != nil || nonav.Ret360 != nil {
+		t.Fatalf("no-nav row %+v", nonav)
+	}
+
+	withGone := parse("/api/products?include_unlisted=true")
+	foundGone := false
+	for _, it := range withGone.Items {
+		if it.ProductCode == "GONE0001" {
+			foundGone = true
+			if it.Listed {
+				t.Fatal("GONE0001 should be unlisted")
+			}
+		}
+	}
+	if !foundGone {
+		t.Fatal("include_unlisted missing GONE0001")
+	}
+
+	q := parse("/api/products?q=hi360")
+	if len(q.Items) != 1 || q.Items[0].ProductCode != "HI360001" {
+		t.Fatalf("search code %v", q.Items)
+	}
+	q = parse("/api/products?q=信银")
+	if len(q.Items) != 1 || q.Items[0].ProductCode != "AF247494G" {
+		t.Fatalf("search name %v", q.Items)
+	}
+
+	page := parse("/api/products?page=1&page_size=1")
+	if page.Total < 2 || page.PageSize != 1 || len(page.Items) != 1 || page.Items[0].ProductCode != "HI360001" {
+		t.Fatalf("page1 %+v", page)
+	}
+	page2 := parse("/api/products?page=2&page_size=1")
+	if len(page2.Items) != 1 || page2.Items[0].ProductCode != "LO360001" {
+		t.Fatalf("page2 %+v", page2)
+	}
+
+	emptyS := testServer(t)
+	if _, err := emptyS.Store.DB.Exec(`DELETE FROM nav_snapshot`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := emptyS.Store.DB.Exec(`DELETE FROM product`); err != nil {
+		t.Fatal(err)
+	}
+	emptyH := emptyS.Router()
+	emptyReg := doJSON(t, emptyH, "POST", "/api/auth/register", map[string]string{"account": "alice", "password": "secret1"}, nil)
+	emptyRec := doJSON(t, emptyH, "GET", "/api/products", nil, cookie(emptyReg))
+	if emptyRec.Code != 200 {
+		t.Fatalf("empty catalog %d %s", emptyRec.Code, emptyRec.Body.String())
+	}
+	var emptyCat catalog
+	_ = json.Unmarshal(emptyRec.Body.Bytes(), &emptyCat)
+	if emptyCat.Total != 0 || len(emptyCat.Items) != 0 || emptyCat.Empty != "no_products" {
+		t.Fatalf("want empty catalog hint, got %+v", emptyCat)
+	}
+}
+
 func TestHTTPProdDoesNotForceSecureSessionCookie(t *testing.T) {
 	s := testServer(t)
 	s.Cfg.Env = "prod"

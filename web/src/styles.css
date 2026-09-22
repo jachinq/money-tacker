@@ -31,6 +31,12 @@ nav a.router-link-active { color: var(--ink); }
 table { width: 100%; border-collapse: collapse; background: var(--paper); }
 th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 14px; }
 th { color: var(--muted); font-weight: 500; }
+th.sort-on { color: var(--ink); }
+th.sortable { cursor: pointer; user-select: none; }
+.table-scroll { overflow-x: auto; }
+.catalog-bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 12px 0 16px; }
+.catalog-bar input[type="text"], .catalog-bar input:not([type]) { min-width: 240px; padding: 8px 10px; border: 1px solid var(--line); background: #fff; }
+.catalog-pager { display: flex; gap: 12px; align-items: center; margin-top: 16px; }
 .mono { font-family: var(--mono); }
 .form { display: flex; flex-direction: column; gap: 12px; max-width: 420px; }
 label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }

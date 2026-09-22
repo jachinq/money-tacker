@@ -61,6 +61,7 @@ func (s *Server) Router() http.Handler {
 			r.Post("/holdings/{code}/ledger/{id}/void", s.handleVoid)
 			r.Delete("/holdings/{code}", s.handleDeleteHolding)
 			r.Get("/holdings/{code}/pnl", s.handleHoldingPnl)
+			r.Get("/products", s.handleProductCatalog)
 			r.Get("/products/{code}", s.handleProduct)
 			r.Get("/products/{code}/nav", s.handleProductNav)
 		})

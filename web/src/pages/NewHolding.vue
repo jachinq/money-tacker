@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
-import { RouterLink, useRouter } from "vue-router";
+import { computed, onMounted, ref, watch } from "vue";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import { api, ApiError } from "../api";
 
 type ProductView = {
@@ -24,6 +24,7 @@ const existing = ref(false);
 const verifiedCode = ref("");
 const looking = ref(false);
 const router = useRouter();
+const route = useRoute();
 
 let lookupSeq = 0;
 let inflightCode = "";
@@ -125,6 +126,14 @@ async function lookup() {
     }
   }
 }
+
+onMounted(() => {
+  const code = String(route.query.product_code || "").trim();
+  if (code) {
+    product_code.value = code;
+    lookup();
+  }
+});
 
 async function submit() {
   err.value = "";

@@ -129,6 +129,21 @@ func PrevNav(navs []NavPoint, date string) (NavPoint, bool) {
 	return best, ok
 }
 
+func NavOnOrBefore(navs []NavPoint, date string) (NavPoint, bool) {
+	var best NavPoint
+	ok := false
+	for _, n := range navs {
+		if n.UnitNavE8 <= 0 {
+			continue
+		}
+		if n.Date <= date && (!ok || n.Date > best.Date) {
+			best = n
+			ok = true
+		}
+	}
+	return best, ok
+}
+
 func LatestNav(navs []NavPoint) (NavPoint, bool) {
 	var best NavPoint
 	ok := false
@@ -238,6 +253,29 @@ func ResolveNavForOccur(navs []NavPoint, occurDate string, manualE8 int64, manua
 		return n.UnitNavE8, n.Date, true, true
 	}
 	return 0, "", false, false
+}
+
+// CatalogWindows is 30 / 90 / 180 / 360 / 730 (两年) natural days.
+var CatalogWindows = []int{30, 90, 180, 360, 730}
+
+// WindowPctE4 is 窗口净值涨跌幅 in hundredths of a percent (5.62% => 562).
+func WindowPctE4(navs []NavPoint, days int) (int64, bool) {
+	if days <= 0 {
+		return 0, false
+	}
+	end, ok := LatestNav(navs)
+	if !ok {
+		return 0, false
+	}
+	startCal, err := addDays(end.Date, -days)
+	if err != nil {
+		return 0, false
+	}
+	start, ok := NavOnOrBefore(navs, startCal)
+	if !ok || start.UnitNavE8 <= 0 {
+		return 0, false
+	}
+	return money.MulDivRound(end.UnitNavE8-start.UnitNavE8, 10000, start.UnitNavE8), true
 }
 
 func addDays(iso string, n int) (string, error) {

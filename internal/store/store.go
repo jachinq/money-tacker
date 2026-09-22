@@ -171,6 +171,29 @@ func (s *Store) Product(code string) (*Product, error) {
 	return p, err
 }
 
+func (s *Store) ListProducts() ([]Product, error) {
+	rows, err := s.DB.Query(`SELECT code, name, issuer, last_seen_page, listed FROM product`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Product
+	for rows.Next() {
+		p := Product{}
+		var listed int
+		var issuer sql.NullString
+		var page sql.NullInt64
+		if err := rows.Scan(&p.Code, &p.Name, &issuer, &page, &listed); err != nil {
+			return nil, err
+		}
+		p.Issuer = issuer.String
+		p.LastSeenPage = int(page.Int64)
+		p.Listed = listed == 1
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) UpsertProduct(code, name, issuer string, page int, now time.Time) error {
 	_, err := s.DB.Exec(`
 		INSERT INTO product(code, name, issuer, last_seen_page, last_seen_at, listed, updated_at)
@@ -228,6 +251,25 @@ func (s *Store) ListNav(code string) ([]NavSnap, error) {
 	rows, err := s.DB.Query(`
 		SELECT product_code, nav_date, unit_nav, acc_nav, daily_return_bp, fetched_at
 		FROM nav_snapshot WHERE product_code=? ORDER BY nav_date ASC`, code)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []NavSnap
+	for rows.Next() {
+		var n NavSnap
+		if err := rows.Scan(&n.ProductCode, &n.NavDate, &n.UnitNavE8, &n.AccNavE8, &n.DailyReturnBP, &n.FetchedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, n)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) ListAllNav() ([]NavSnap, error) {
+	rows, err := s.DB.Query(`
+		SELECT product_code, nav_date, unit_nav, acc_nav, daily_return_bp, fetched_at
+		FROM nav_snapshot ORDER BY product_code ASC, nav_date ASC`)
 	if err != nil {
 		return nil, err
 	}
