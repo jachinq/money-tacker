@@ -496,3 +496,130 @@ func TestCookieSecureAndForwardedProto(t *testing.T) {
 		t.Fatal("X-Forwarded-Proto=https must set Secure")
 	}
 }
+
+func TestCreateHoldingImpliedCumulative(t *testing.T) {
+	s := testServer(t)
+	h := s.Router()
+	reg := doJSON(t, h, "POST", "/api/auth/register", map[string]string{"account": "alice", "password": "secret1"}, nil)
+	ck := cookie(reg)
+	if err := s.Store.UpsertSnapshot("AF247494G", "2026-09-18", 101000000, 101000000, 0, "", s.Now().Format(time.RFC3339)); err != nil {
+		t.Fatal(err)
+	}
+	buy := doJSON(t, h, "POST", "/api/holdings", map[string]string{
+		"product_code": "AF247494G", "amount": "10000", "occur_date": "2024-03-01", "cumulative": "100.00",
+	}, ck)
+	if buy.Code != 200 {
+		t.Fatalf("buy %d %s", buy.Code, buy.Body.String())
+	}
+	var created map[string]any
+	_ = json.Unmarshal(buy.Body.Bytes(), &created)
+	if created["estimated"] == true {
+		t.Fatalf("implied buy must not be estimated: %+v", created)
+	}
+
+	det := doJSON(t, h, "GET", "/api/holdings/AF247494G", nil, ck)
+	if det.Code != 200 {
+		t.Fatalf("detail %d %s", det.Code, det.Body.String())
+	}
+	var body struct {
+		Holding struct {
+			Cumulative  string `json:"cumulative"`
+			Unrealized  string `json:"unrealized"`
+			Cost        string `json:"cost"`
+			MarketValue string `json:"market_value"`
+		} `json:"holding"`
+	}
+	if err := json.Unmarshal(det.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Holding.Cost != "10000.00" {
+		t.Fatalf("cost %s", body.Holding.Cost)
+	}
+	if body.Holding.Cumulative != "100.00" || body.Holding.Unrealized != "100.00" {
+		t.Fatalf("want 累计/未实现 100.00 got cum=%s unrel=%s mv=%s",
+			body.Holding.Cumulative, body.Holding.Unrealized, body.Holding.MarketValue)
+	}
+
+	pnlRec := doJSON(t, h, "GET", "/api/holdings/AF247494G/pnl", nil, ck)
+	if pnlRec.Code != 200 {
+		t.Fatalf("pnl %d %s", pnlRec.Code, pnlRec.Body.String())
+	}
+	var pnlBody struct {
+		CollectedDaily string `json:"collected_daily"`
+		CollectionGap  string `json:"collection_gap"`
+	}
+	if err := json.Unmarshal(pnlRec.Body.Bytes(), &pnlBody); err != nil {
+		t.Fatal(err)
+	}
+	if pnlBody.CollectedDaily != "0.00" {
+		t.Fatalf("single nav day has no prev, collected=%s", pnlBody.CollectedDaily)
+	}
+	if pnlBody.CollectionGap != "100.00" {
+		t.Fatalf("gap %s want 100.00", pnlBody.CollectionGap)
+	}
+}
+
+func TestCreateHoldingPastDateRequiresCumulative(t *testing.T) {
+	s := testServer(t)
+	h := s.Router()
+	reg := doJSON(t, h, "POST", "/api/auth/register", map[string]string{"account": "alice", "password": "secret1"}, nil)
+	ck := cookie(reg)
+	miss := doJSON(t, h, "POST", "/api/holdings", map[string]string{
+		"product_code": "AF247494G", "amount": "10000", "occur_date": "2024-03-01",
+	}, ck)
+	if miss.Code != 400 {
+		t.Fatalf("want 400, got %d %s", miss.Code, miss.Body.String())
+	}
+	if !strings.Contains(miss.Body.String(), "累计收益") {
+		t.Fatalf("want 累计收益 hint, got %s", miss.Body.String())
+	}
+	ignored := doJSON(t, h, "POST", "/api/holdings", map[string]string{
+		"product_code": "AF247494G", "amount": "10000", "occur_date": "2024-03-01", "unit_nav": "1.0000",
+	}, ck)
+	if ignored.Code != 400 {
+		t.Fatalf("create must ignore 手工净值, got %d %s", ignored.Code, ignored.Body.String())
+	}
+}
+
+func TestCreateHoldingCumulativeNeedsLatestNav(t *testing.T) {
+	s := testServer(t)
+	h := s.Router()
+	reg := doJSON(t, h, "POST", "/api/auth/register", map[string]string{"account": "alice", "password": "secret1"}, nil)
+	ck := cookie(reg)
+	if err := s.Store.UpsertProduct("NONAV001", "无净值产品", "测试", 1, s.Now()); err != nil {
+		t.Fatal(err)
+	}
+	rec := doJSON(t, h, "POST", "/api/holdings", map[string]string{
+		"product_code": "NONAV001", "amount": "10000", "occur_date": "2026-09-21", "cumulative": "100.00",
+	}, ck)
+	if rec.Code != 400 {
+		t.Fatalf("want 400, got %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAdditionalBuyIgnoresCumulativeUsesManualNav(t *testing.T) {
+	s := testServer(t)
+	h := s.Router()
+	reg := doJSON(t, h, "POST", "/api/auth/register", map[string]string{"account": "alice", "password": "secret1"}, nil)
+	ck := cookie(reg)
+	buy := doJSON(t, h, "POST", "/api/holdings", map[string]string{
+		"product_code": "AF247494G", "amount": "10000", "occur_date": "2026-09-18",
+	}, ck)
+	if buy.Code != 200 {
+		t.Fatal(buy.Body.String())
+	}
+	add := doJSON(t, h, "POST", "/api/holdings/AF247494G/buys", map[string]string{
+		"amount": "5000", "occur_date": "2024-03-01", "cumulative": "999.00", "unit_nav": "1.0000",
+	}, ck)
+	if add.Code != 200 {
+		t.Fatalf("add %d %s", add.Code, add.Body.String())
+	}
+	var created struct {
+		UnitNav     string `json:"unit_nav"`
+		NavDateUsed string `json:"nav_date_used"`
+	}
+	_ = json.Unmarshal(add.Body.Bytes(), &created)
+	if created.UnitNav != "1.00000000" || created.NavDateUsed != "2024-03-01" {
+		t.Fatalf("append must use 手工净值, got %+v", created)
+	}
+}

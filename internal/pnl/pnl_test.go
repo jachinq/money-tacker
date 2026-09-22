@@ -182,6 +182,76 @@ func TestWindowPctSkipsHangZeroStartDate(t *testing.T) {
 	}
 }
 
+func TestImpliedBuyFromCumulativeRoundNumbers(t *testing.T) {
+	cash, ok := money.ParseYuanToFen("10000")
+	if !ok {
+		t.Fatal("cash")
+	}
+	cum, ok := money.ParseYuanToFen("100")
+	if !ok {
+		t.Fatal("cum")
+	}
+	latest := nav("2026-09-21", "1.0100").UnitNavE8
+	shares, implied, ok := ImpliedBuy(cash, cum, latest)
+	if !ok {
+		t.Fatal("implied buy")
+	}
+	if shares != 1_000_000_000_000 {
+		t.Fatalf("shares %d want 10000.00000000 e8", shares)
+	}
+	if implied != 100_000_000 {
+		t.Fatalf("implied nav %d want 1.00000000", implied)
+	}
+	mv := money.CashFromShares(shares, latest)
+	if mv-cash != 10_000 {
+		t.Fatalf("unrealized %d want 100.00", mv-cash)
+	}
+}
+
+func TestImpliedBuyRejectsNonPositiveMarketValue(t *testing.T) {
+	cash, _ := money.ParseYuanToFen("100")
+	cum, _ := money.ParseYuanToFen("-100")
+	if _, _, ok := ImpliedBuy(cash, cum, 100_000_000); ok {
+		t.Fatal("市值必须为正")
+	}
+}
+
+func TestResolveNavForOccurDoesNotEstimateLatest(t *testing.T) {
+	navs := []NavPoint{nav("2026-09-18", "1.0562")}
+	if _, _, ok, _ := ResolveNavForOccur(navs, "2024-03-01", 0, ""); ok {
+		t.Fatal("occur before all navs must not use latest as buy nav")
+	}
+	n, used, ok, est := ResolveNavForOccur(navs, "2026-09-21", 0, "")
+	if !ok || est || used != "2026-09-18" || n != navs[0].UnitNavE8 {
+		t.Fatalf("prev nav n=%d used=%s ok=%v est=%v", n, used, ok, est)
+	}
+}
+
+func TestCollectionGapIsCumulativeMinusCollectedDaily(t *testing.T) {
+	b := buy(1, "2024-03-01", "10000", "1.0000", "2024-03-01")
+	navs := []NavPoint{
+		nav("2026-09-18", "1.0500"),
+		nav("2026-09-21", "1.0600"),
+	}
+	latest := navs[1].UnitNavE8
+	st, err := Replay([]Entry{b})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mv := money.CashFromShares(st.SharesE8, latest)
+	cum := mv - st.CostFen
+	if cum != 60_000 {
+		t.Fatalf("cum %d want 600.00", cum)
+	}
+	collected := CollectedDailySum([]Entry{b}, navs)
+	if collected != 10_000 {
+		t.Fatalf("collected %d want 100.00 (only 1.05→1.06; first nav day has no prev)", collected)
+	}
+	if CollectionGap(cum, collected) != 50_000 {
+		t.Fatalf("gap %d want 500.00", CollectionGap(cum, collected))
+	}
+}
+
 func TestWindowPctZeroStartIsInsufficient(t *testing.T) {
 	navs := []NavPoint{
 		{Date: "2026-08-15", UnitNavE8: 0},

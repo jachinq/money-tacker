@@ -11,6 +11,8 @@ const code = route.params.code as string;
 const holding = ref<any>(null);
 const ledger = ref<any[]>([]);
 const days = ref<any[]>([]);
+const collectedDaily = ref("");
+const collectionGap = ref("");
 const err = ref("");
 const amount = ref("");
 const occur = ref("");
@@ -22,8 +24,10 @@ async function load() {
   const d = await api<{ holding: any; ledger: any[] }>("/api/holdings/" + code);
   holding.value = d.holding;
   ledger.value = d.ledger || [];
-  const p = await api<{ days: any[] }>("/api/holdings/" + code + "/pnl");
+  const p = await api<{ days: any[]; collected_daily?: string; collection_gap?: string }>("/api/holdings/" + code + "/pnl");
   days.value = p.days || [];
+  collectedDaily.value = p.collected_daily || "";
+  collectionGap.value = p.collection_gap || "";
 }
 
 onMounted(async () => {
@@ -144,6 +148,11 @@ async function remove() {
 
     <h3>按日收益（自然日月历）</h3>
     <p class="muted">与上方「当日收益」口径不同：这里按自然日排列。挂零与已公布且为 0 不是同一格。实线圈为展示日。</p>
+    <p v-if="collectionGap" class="muted">
+      已采集按日合计 <span class="mono">{{ collectedDaily }}</span>
+      · 采集缺口 <span class="mono" :class="pnlClass(collectionGap)">{{ collectionGap }}</span>
+      （累计 − 已采集按日之和；缺口不是某一天赚到的钱，也不记入日历第一天）
+    </p>
     <DailyPnlCalendar :days="days" :display-date="holding.display_date || ''" />
   </div>
 </template>

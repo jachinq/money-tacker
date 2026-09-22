@@ -14,7 +14,7 @@ type ProductView = {
 const product_code = ref("AF247494G");
 const amount = ref("10000");
 const occur_date = ref("");
-const unit_nav = ref("");
+const cumulative = ref("");
 const err = ref("");
 const name = ref("");
 const listed = ref<boolean | null>(null);
@@ -67,7 +67,7 @@ const canSubmit = computed(() => {
   const code = normCode(product_code.value);
   if (!code || verifiedCode.value !== code || looking.value) return false;
   if (!listed.value || existing.value) return false;
-  if (!latest_nav.value && !unit_nav.value.trim()) return false;
+  if (!latest_nav.value) return false;
   return true;
 });
 
@@ -111,8 +111,8 @@ async function lookup() {
       err.value = "该产品已有持仓账户，请走追加买入";
     } else if (!p.listed) {
       err.value = "产品已不在代销目录，不能建仓";
-    } else if (!latest_nav.value && !unit_nav.value.trim()) {
-      err.value = "无可用净值，请填写手工净值";
+    } else if (!latest_nav.value) {
+      err.value = "尚无最新净值，不能建仓";
     }
   } catch (e) {
     if (seq !== lookupSeq) return;
@@ -150,7 +150,7 @@ async function submit() {
         product_code: product_code.value,
         amount: amount.value,
         occur_date: occur_date.value || undefined,
-        unit_nav: unit_nav.value || undefined,
+        cumulative: cumulative.value || undefined,
       }),
     });
     router.push("/holdings/" + product_code.value.toUpperCase());
@@ -179,7 +179,11 @@ async function submit() {
       <label>净值日 <input :value="navDateDisplay" readonly disabled /></label>
       <label>购入金额（元） <input v-model="amount" required /></label>
       <label>发生日（可空=今天） <input v-model="occur_date" placeholder="YYYY-MM-DD" /></label>
-      <label>手工净值（可选） <input v-model="unit_nav" /></label>
+      <label>
+        累计收益（可选，截至净值日 {{ navDateDisplay || "—" }}）
+        <input v-model="cumulative" placeholder="银行 App 上的累计收益，可负" />
+      </label>
+      <p class="muted">发生日没有当天或更早的公开净值时必须填写，用于反推份额。填了则覆盖公开净值解析。</p>
       <p v-if="existing && verifiedCode" class="muted">
         <RouterLink :to="'/holdings/' + verifiedCode">打开该持仓账户追加买入</RouterLink>
       </p>

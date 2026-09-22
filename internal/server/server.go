@@ -259,6 +259,7 @@ type buyReq struct {
 	OccurDate   string `json:"occur_date"`
 	UnitNav     string `json:"unit_nav"`
 	NavDate     string `json:"nav_date"`
+	Cumulative  string `json:"cumulative"`
 }
 
 func (s *Server) writeBuy(w http.ResponseWriter, userID int64, req buyReq, create bool) {
@@ -285,20 +286,52 @@ func (s *Server) writeBuy(w http.ResponseWriter, userID int64, req buyReq, creat
 		writeErr(w, 400, "BAD_REQUEST", "发生日不能晚于今天")
 		return
 	}
-	var manual int64
-	if strings.TrimSpace(req.UnitNav) != "" {
-		manual, ok = money.ParseNavToE8(req.UnitNav)
-		if !ok || manual <= 0 {
-			writeErr(w, 400, "BAD_REQUEST", "手工净值无效")
+	navs := s.navPoints(req.ProductCode)
+	var navE8, shares int64
+	var used string
+	var estimated bool
+	if create {
+		if cumStr := strings.TrimSpace(req.Cumulative); cumStr != "" {
+			cum, parsed := money.ParseYuanToFen(cumStr)
+			if !parsed {
+				writeErr(w, 400, "BAD_REQUEST", "累计收益无效")
+				return
+			}
+			latest, has := pnl.LatestNav(navs)
+			if !has {
+				writeErr(w, 400, "NAV_UNAVAILABLE", "尚无最新净值，不能按累计收益反推")
+				return
+			}
+			shares, navE8, ok = pnl.ImpliedBuy(cash, cum, latest.UnitNavE8)
+			if !ok {
+				writeErr(w, 400, "BAD_REQUEST", "累计收益无效")
+				return
+			}
+			used = occur
+		} else {
+			navE8, used, ok, estimated = pnl.ResolveNavForOccur(navs, occur, 0, "")
+			if !ok {
+				writeErr(w, 400, "NAV_UNAVAILABLE", "无可用净值，请填写累计收益")
+				return
+			}
+			shares = money.SharesFromCash(cash, navE8)
+		}
+	} else {
+		var manual int64
+		if strings.TrimSpace(req.UnitNav) != "" {
+			manual, ok = money.ParseNavToE8(req.UnitNav)
+			if !ok || manual <= 0 {
+				writeErr(w, 400, "BAD_REQUEST", "手工净值无效")
+				return
+			}
+		}
+		navE8, used, ok, estimated = pnl.ResolveNavForOccur(navs, occur, manual, strings.TrimSpace(req.NavDate))
+		if !ok {
+			writeErr(w, 400, "NAV_UNAVAILABLE", "无可用净值，请填写手工净值")
 			return
 		}
+		shares = money.SharesFromCash(cash, navE8)
 	}
-	navE8, used, ok, estimated := pnl.ResolveNavForOccur(s.navPoints(req.ProductCode), occur, manual, strings.TrimSpace(req.NavDate))
-	if !ok {
-		writeErr(w, 400, "NAV_UNAVAILABLE", "无可用净值，请填写手工净值")
-		return
-	}
-	shares := money.SharesFromCash(cash, navE8)
 	if shares <= 0 {
 		writeErr(w, 400, "BAD_REQUEST", "份额无效")
 		return
@@ -585,7 +618,22 @@ func (s *Server) handleHoldingPnl(w http.ResponseWriter, r *http.Request) {
 			"unit_nav": money.FormatNav(row.UnitNavE8),
 		})
 	}
-	writeJSON(w, 200, map[string]any{"days": out})
+	st, err := pnl.Replay(entries)
+	if err != nil {
+		writeErr(w, 500, "INTERNAL", "服务器错误")
+		return
+	}
+	var cum int64
+	if latest, has := pnl.LatestNav(navs); has {
+		mv := money.CashFromShares(st.SharesE8, latest.UnitNavE8)
+		cum = mv - st.CostFen + st.RealizedFen
+	}
+	collected := pnl.CollectedDailySum(entries, navs)
+	writeJSON(w, 200, map[string]any{
+		"days":            out,
+		"collected_daily": money.FormatFen(collected),
+		"collection_gap":  money.FormatFen(pnl.CollectionGap(cum, collected)),
+	})
 }
 
 func (s *Server) handleProduct(w http.ResponseWriter, r *http.Request) {

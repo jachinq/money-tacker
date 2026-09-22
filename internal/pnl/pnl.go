@@ -36,19 +36,19 @@ type NavPoint struct {
 }
 
 type State struct {
-	SharesE8      int64
-	CostFen       int64
-	RealizedFen   int64
-	TotalBuyFen   int64
+	SharesE8       int64
+	CostFen        int64
+	RealizedFen    int64
+	TotalBuyFen    int64
 	TotalRedeemFen int64
 }
 
 type DayPnl struct {
-	Date        string
-	PnlFen      int64
-	HangZero    bool
-	HasNav      bool
-	UnitNavE8   int64
+	Date      string
+	PnlFen    int64
+	HangZero  bool
+	HasNav    bool
+	UnitNavE8 int64
 }
 
 func Active(entries []Entry) []Entry {
@@ -246,13 +246,39 @@ func ResolveNavForOccur(navs []NavPoint, occurDate string, manualE8 int64, manua
 	if n, has := PrevNav(navs, occurDate); has {
 		return n.UnitNavE8, n.Date, true, false
 	}
-	if n, has := LatestNav(navs); has && n.Date > occurDate {
-		return n.UnitNavE8, n.Date, true, true
-	}
-	if n, has := LatestNav(navs); has {
-		return n.UnitNavE8, n.Date, true, true
-	}
 	return 0, "", false, false
+}
+
+// ImpliedBuy derives 份额 and 隐含买入净值 from 购入金额, 申报累计收益, and 最新净值.
+func ImpliedBuy(cashFen, cumulativeFen, latestNavE8 int64) (sharesE8, navE8 int64, ok bool) {
+	mv := cashFen + cumulativeFen
+	if cashFen <= 0 || mv <= 0 || latestNavE8 <= 0 {
+		return 0, 0, false
+	}
+	sharesE8 = money.SharesFromCash(mv, latestNavE8)
+	if sharesE8 <= 0 {
+		return 0, 0, false
+	}
+	navE8 = money.MulDiv(cashFen, money.FenScale, sharesE8)
+	if navE8 <= 0 {
+		return 0, 0, false
+	}
+	return sharesE8, navE8, true
+}
+
+func CollectedDailySum(entries []Entry, navs []NavPoint) int64 {
+	var sum int64
+	for _, n := range navs {
+		if n.UnitNavE8 <= 0 {
+			continue
+		}
+		sum += DailyPnl(entries, navs, n.Date)
+	}
+	return sum
+}
+
+func CollectionGap(cumulativeFen, collectedFen int64) int64 {
+	return cumulativeFen - collectedFen
 }
 
 // CatalogWindows is 30 / 90 / 180 / 360 / 730 (两年) natural days.
