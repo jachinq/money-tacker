@@ -832,6 +832,7 @@ type holdingView struct {
 	Closed                     bool   `json:"closed"`
 	CumulativeReturn           string `json:"cumulative_return"`
 	AnnualizedCumulativeReturn string `json:"annualized_cumulative_return"`
+	CatalogPageURL             string `json:"catalog_page_url"`
 	MarketValueFen             int64  `json:"-"`
 	CumulativeFen              int64  `json:"-"`
 	DailyPnlFen                int64  `json:"-"`
@@ -891,8 +892,12 @@ func (s *Server) holdingViews(userID int64, includeClosed bool) ([]holdingView, 
 		if hasLatest {
 			latestPt = latest
 		}
+		catalogURL := ""
+		if p.LastSeenPage > 0 && strings.TrimSpace(s.Cfg.CrawlBaseURL) != "" {
+			catalogURL = crawl.CatalogPageURL(s.Cfg.CrawlBaseURL, p.LastSeenPage)
+		}
 		out = append(out, holdingView{
-			ProductCode: h.ProductCode, Name: p.Name, Listed: p.Listed,
+			ProductCode: h.ProductCode, Name: p.Name, Listed: p.Listed, CatalogPageURL: catalogURL,
 			Shares: money.FormatShares(st.SharesE8), Cost: money.FormatFen(st.CostFen),
 			MarketValue: money.FormatFen(mv), Unrealized: money.FormatFen(unrel),
 			Realized: money.FormatFen(st.RealizedFen), Cumulative: money.FormatFen(cum),

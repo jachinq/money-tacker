@@ -46,6 +46,16 @@ th.sortable { cursor: pointer; user-select: none; }
 }
 .summary-full { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .mono { font-family: var(--mono); }
+.code-line { display: flex; align-items: baseline; gap: 10px; margin: 0 0 12px; }
+.code-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--muted);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .form { display: flex; flex-direction: column; gap: 12px; max-width: 420px; }
 label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
 label.check { flex-direction: row; align-items: center; gap: 8px; }

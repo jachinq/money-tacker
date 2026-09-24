@@ -824,3 +824,55 @@ func TestRefreshHoldingFromCatalogPage(t *testing.T) {
 		t.Fatalf("miss %d %s", miss.Code, miss.Body.String())
 	}
 }
+
+func TestHoldingDetailCatalogPage(t *testing.T) {
+	s := testServer(t)
+	s.Cfg.CrawlBaseURL = "https://www.bankofchina.com/sourcedb/srfd6_2024/"
+	h := s.Router()
+	reg := doJSON(t, h, "POST", "/api/auth/register", map[string]string{"account": "alice", "password": "secret1"}, nil)
+	ck := cookie(reg)
+	buy := doJSON(t, h, "POST", "/api/holdings", map[string]string{
+		"product_code": "AF247494G", "amount": "10000", "occur_date": "2026-09-18",
+	}, ck)
+	if buy.Code != 200 {
+		t.Fatalf("buy %d %s", buy.Code, buy.Body.String())
+	}
+
+	first := holdingCatalogPage(t, h, ck)
+	if first != "https://www.bankofchina.com/sourcedb/srfd6_2024/index.html" {
+		t.Fatalf("page 1 catalog url %q", first)
+	}
+
+	if _, err := s.Store.DB.Exec(`UPDATE product SET last_seen_page=3 WHERE code='AF247494G'`); err != nil {
+		t.Fatal(err)
+	}
+	third := holdingCatalogPage(t, h, ck)
+	if third != "https://www.bankofchina.com/sourcedb/srfd6_2024/index_2.html" {
+		t.Fatalf("page 3 catalog url %q", third)
+	}
+
+	if _, err := s.Store.DB.Exec(`UPDATE product SET last_seen_page=NULL WHERE code='AF247494G'`); err != nil {
+		t.Fatal(err)
+	}
+	none := holdingCatalogPage(t, h, ck)
+	if none != "" {
+		t.Fatalf("missing catalog page should be empty, got %q", none)
+	}
+}
+
+func holdingCatalogPage(t *testing.T, h http.Handler, ck []*http.Cookie) string {
+	t.Helper()
+	det := doJSON(t, h, "GET", "/api/holdings/AF247494G", nil, ck)
+	if det.Code != 200 {
+		t.Fatalf("detail %d %s", det.Code, det.Body.String())
+	}
+	var body struct {
+		Holding struct {
+			CatalogPageURL string `json:"catalog_page_url"`
+		} `json:"holding"`
+	}
+	if err := json.Unmarshal(det.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	return body.Holding.CatalogPageURL
+}

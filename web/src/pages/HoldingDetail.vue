@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import { api, ApiError } from "../api";
 import DailyPnlCalendar from "../components/DailyPnlCalendar.vue";
 import { pnlClass } from "../pnlClass";
+import { productCodeClickNotices } from "../productCodeClick";
 
 const route = useRoute();
 const router = useRouter();
@@ -20,6 +21,37 @@ const nav = ref("");
 const redeemMode = ref<"amount" | "shares" | "all">("amount");
 const redeemVal = ref("");
 const refreshing = ref(false);
+const codeNotice = ref("");
+let codeNoticeTimer: ReturnType<typeof setTimeout> | undefined;
+
+function openCatalogTab(url: string): boolean {
+  const tab = window.open(url, "_blank");
+  if (!tab) return false;
+  tab.opener = null;
+  return true;
+}
+
+async function copyProductCode() {
+  const productCode = String(holding.value?.product_code || "");
+  const catalogURL = String(holding.value?.catalog_page_url || "");
+  const opened = catalogURL !== "" && openCatalogTab(catalogURL);
+  let copied = false;
+  try {
+    await navigator.clipboard.writeText(productCode);
+    copied = true;
+  } catch {
+    copied = false;
+  }
+  codeNotice.value = productCodeClickNotices({
+    copied,
+    hasCatalogPage: catalogURL !== "",
+    opened,
+  }).join(" · ");
+  clearTimeout(codeNoticeTimer);
+  codeNoticeTimer = setTimeout(() => {
+    codeNotice.value = "";
+  }, 2500);
+}
 
 async function load() {
   const d = await api<{ holding: any; ledger: any[] }>("/api/holdings/" + code);
@@ -104,7 +136,10 @@ async function remove() {
   <div v-if="err" class="err">{{ err }}</div>
   <div v-if="holding">
     <h2>{{ holding.name }}</h2>
-    <p class="muted mono">{{ holding.product_code }}</p>
+    <p class="code-line">
+      <button class="code-link mono" type="button" @click="copyProductCode">{{ holding.product_code }}</button>
+      <span v-if="codeNotice" class="muted">{{ codeNotice }}</span>
+    </p>
     <p>
       最新净值 {{ holding.latest_nav }} · 净值日 {{ holding.latest_nav_date }} · 间隔 {{ holding.stale_days }} 天
       <span v-if="holding.hang_zero" class="tag">净值未更新</span>

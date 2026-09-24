@@ -25,7 +25,7 @@ func (r *Runner) RefreshProduct(code string) error {
 	if p.LastSeenPage <= 0 {
 		return ErrNoCatalogPage
 	}
-	body, status, err := r.Fetcher.Get(catalogPageURL(r.BaseURL, p.LastSeenPage))
+	body, status, err := r.Fetcher.Get(CatalogPageURL(r.BaseURL, p.LastSeenPage))
 	if err != nil || status < 200 || status >= 300 || strings.TrimSpace(body) == "" {
 		return ErrPageUnread
 	}
@@ -47,7 +47,7 @@ func (r *Runner) RefreshProduct(code string) error {
 	return r.Store.UpsertSnapshot(row.Code, row.NavDate, row.UnitNavE8, row.AccNavE8, row.DailyReturnBP, row.ExtraJSON, now.Format(time.RFC3339))
 }
 
-func catalogPageURL(base string, page int) string {
+func CatalogPageURL(base string, page int) string {
 	base = strings.TrimRight(base, "/") + "/"
 	if page <= 1 {
 		return base + "index.html"
