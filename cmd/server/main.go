@@ -32,7 +32,8 @@ func main() {
 		Now:     func() time.Time { return time.Now().In(cfg.TZ) },
 	}
 	srv := server.New(cfg, st)
-	srv.Crawl = runner.Run
+	srv.Crawl = runner.Go
+	srv.CrawlBusy = runner.Busy
 	if _, err := os.Stat("web/dist"); err == nil {
 		srv.Static = "web/dist"
 	}

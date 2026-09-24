@@ -1,6 +1,7 @@
 package crawl
 
 import (
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -379,5 +380,60 @@ func TestPageFailureDoesNotUpdateListed(t *testing.T) {
 	}
 	if len(runs) != 1 || runs[0].Status != "fail" {
 		t.Fatalf("run %+v", runs)
+	}
+}
+
+type blockFetch struct {
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (b blockFetch) Get(string) (string, int, error) {
+	close(b.entered)
+	<-b.release
+	return "", 404, nil
+}
+
+func TestRunWhileExecutingDoesNotStartAnother(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "t.db")
+	sqlDB, err := db.Open(path, migrations.FS, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqlDB.Close()
+	st := &store.Store{DB: sqlDB}
+	now := time.Date(2026, 9, 21, 10, 0, 0, 0, time.UTC)
+	fetch := blockFetch{entered: make(chan struct{}), release: make(chan struct{})}
+	r := &Runner{
+		Store:    st,
+		Fetcher:  fetch,
+		BaseURL:  "https://example.test/",
+		Now:      func() time.Time { return now },
+		MaxPages: 1,
+	}
+	done := make(chan error, 1)
+	go func() { done <- r.Run() }()
+	<-fetch.entered
+	err = r.Run()
+	if !errors.Is(err, ErrBusy) {
+		t.Fatalf("second run err=%v", err)
+	}
+	runs, err := st.ListCrawlRuns(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 1 {
+		t.Fatalf("runs=%d want 1", len(runs))
+	}
+	close(fetch.release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	runs, err = st.ListCrawlRuns(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 1 || runs[0].Status != "fail" {
+		t.Fatalf("after %+v", runs)
 	}
 }

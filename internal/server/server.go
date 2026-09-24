@@ -16,17 +16,19 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"money-tacker/internal/config"
+	"money-tacker/internal/crawl"
 	"money-tacker/internal/money"
 	"money-tacker/internal/pnl"
 	"money-tacker/internal/store"
 )
 
 type Server struct {
-	Cfg    config.Config
-	Store  *store.Store
-	Now    func() time.Time
-	Crawl  func() error
-	Static string
+	Cfg       config.Config
+	Store     *store.Store
+	Now       func() time.Time
+	Crawl     func() error
+	CrawlBusy func() bool
+	Static    string
 }
 
 func New(cfg config.Config, st *store.Store) *Server {
@@ -62,6 +64,8 @@ func (s *Server) Router() http.Handler {
 			r.Delete("/holdings/{code}", s.handleDeleteHolding)
 			r.Get("/holdings/{code}/pnl", s.handleHoldingPnl)
 			r.Get("/products", s.handleProductCatalog)
+			r.Get("/crawl-runs", s.handleListCrawls)
+			r.Post("/crawl-runs", s.handleStartCrawl)
 			r.Get("/products/{code}", s.handleProduct)
 			r.Get("/products/{code}/nav", s.handleProductNav)
 		})
@@ -676,6 +680,65 @@ func (s *Server) handleProductNav(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"items": out})
 }
 
+func (s *Server) handleListCrawls(w http.ResponseWriter, r *http.Request) {
+	page := 1
+	if raw := r.URL.Query().Get("page"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 {
+			writeErr(w, 400, "BAD_REQUEST", "页码无效")
+			return
+		}
+		page = n
+	}
+	problems := r.URL.Query().Get("problems") == "1"
+	const pageSize = 50
+	total, err := s.Store.CountCrawlRuns(problems)
+	if err != nil {
+		writeErr(w, 500, "INTERNAL", "服务器错误")
+		return
+	}
+	list, err := s.Store.ListCrawlRunsPage(pageSize, (page-1)*pageSize, problems)
+	if err != nil {
+		writeErr(w, 500, "INTERNAL", "服务器错误")
+		return
+	}
+	items := make([]map[string]any, 0, len(list))
+	for _, c := range list {
+		var finished any
+		if c.FinishedAt.Valid {
+			finished = c.FinishedAt.String
+		}
+		summary := ""
+		if c.ErrorSummary.Valid {
+			summary = c.ErrorSummary.String
+		}
+		items = append(items, map[string]any{
+			"id":          c.ID,
+			"started_at":  c.StartedAt,
+			"finished_at": finished,
+			"status":      c.Status,
+			"pages_ok":    c.PagesOK,
+			"products_ok": c.ProductsOK,
+			"summary":     summary,
+		})
+	}
+	busy := false
+	if s.CrawlBusy != nil {
+		busy = s.CrawlBusy()
+	}
+	writeJSON(w, 200, map[string]any{
+		"items":     items,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+		"busy":      busy,
+	})
+}
+
+func (s *Server) handleStartCrawl(w http.ResponseWriter, r *http.Request) {
+	s.startCrawl(w)
+}
+
 func (s *Server) handleCrawlRuns(w http.ResponseWriter, r *http.Request) {
 	if !s.adminOK(r) {
 		writeErr(w, 401, "UNAUTHORIZED", "需要管理令牌")
@@ -694,11 +757,22 @@ func (s *Server) handleCrawlNow(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 401, "UNAUTHORIZED", "需要管理令牌")
 		return
 	}
+	s.startCrawl(w)
+}
+
+func (s *Server) startCrawl(w http.ResponseWriter) {
 	if s.Crawl == nil {
 		writeErr(w, 500, "INTERNAL", "采集未配置")
 		return
 	}
-	go func() { _ = s.Crawl() }()
+	if err := s.Crawl(); err != nil {
+		if errors.Is(err, crawl.ErrBusy) {
+			writeErr(w, 409, "CRAWL_BUSY", "采集进行中")
+			return
+		}
+		writeErr(w, 500, "INTERNAL", "服务器错误")
+		return
+	}
 	writeJSON(w, 202, map[string]any{"ok": true})
 }
 

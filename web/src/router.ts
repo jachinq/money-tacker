@@ -12,6 +12,7 @@ export const router = createRouter({
       children: [
         { path: "", component: () => import("./pages/Overview.vue") },
         { path: "products", component: () => import("./pages/Products.vue") },
+        { path: "crawls", component: () => import("./pages/Crawls.vue") },
         { path: "holdings", component: () => import("./pages/Holdings.vue") },
         { path: "holdings/new", component: () => import("./pages/NewHolding.vue") },
         { path: "holdings/:code", component: () => import("./pages/HoldingDetail.vue") },

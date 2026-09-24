@@ -37,9 +37,18 @@ th.sortable { cursor: pointer; user-select: none; }
 .catalog-bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 12px 0 16px; }
 .catalog-bar input[type="text"], .catalog-bar input:not([type]) { min-width: 240px; padding: 8px 10px; border: 1px solid var(--line); background: #fff; }
 .catalog-pager { display: flex; gap: 12px; align-items: center; margin-top: 16px; }
+.summary-clip {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: 0;
+}
+.summary-full { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .mono { font-family: var(--mono); }
 .form { display: flex; flex-direction: column; gap: 12px; max-width: 420px; }
 label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+label.check { flex-direction: row; align-items: center; gap: 8px; }
 input { padding: 8px 10px; border: 1px solid var(--line); background: #fff; }
 input:disabled { background: #f0ebe3; color: var(--muted); }
 .code-row { display: flex; gap: 8px; align-items: stretch; }

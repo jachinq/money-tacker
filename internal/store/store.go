@@ -311,8 +311,23 @@ func (s *Store) UpdateObservation(runID int64, code, navDate string, unit int64)
 	return err
 }
 
-func (s *Store) ListCrawlRuns(limit int) ([]CrawlRun, error) {
-	rows, err := s.DB.Query(`SELECT id, started_at, finished_at, status, pages_ok, products_ok, error_summary FROM crawl_run ORDER BY id DESC LIMIT ?`, limit)
+func (s *Store) CountCrawlRuns(problemsOnly bool) (int, error) {
+	q := `SELECT COUNT(*) FROM crawl_run`
+	if problemsOnly {
+		q += ` WHERE status IN ('fail','partial')`
+	}
+	var n int
+	err := s.DB.QueryRow(q).Scan(&n)
+	return n, err
+}
+
+func (s *Store) ListCrawlRunsPage(limit, offset int, problemsOnly bool) ([]CrawlRun, error) {
+	q := `SELECT id, started_at, finished_at, status, pages_ok, products_ok, error_summary FROM crawl_run`
+	if problemsOnly {
+		q += ` WHERE status IN ('fail','partial')`
+	}
+	q += ` ORDER BY id DESC LIMIT ? OFFSET ?`
+	rows, err := s.DB.Query(q, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -326,6 +341,10 @@ func (s *Store) ListCrawlRuns(limit int) ([]CrawlRun, error) {
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+func (s *Store) ListCrawlRuns(limit int) ([]CrawlRun, error) {
+	return s.ListCrawlRunsPage(limit, 0, false)
 }
 
 func (s *Store) HoldingByUserCode(userID int64, code string) (*Holding, error) {

@@ -1,14 +1,19 @@
 package crawl
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"money-tacker/internal/store"
 )
+
+// ErrBusy means a crawl is still executing, so this call did not start one.
+var ErrBusy = errors.New("采集进行中")
 
 type Fetcher interface {
 	Get(url string) (body string, status int, err error)
@@ -48,9 +53,55 @@ type Runner struct {
 	Delay    time.Duration
 	Now      func() time.Time
 	MaxPages int
+
+	mu      sync.Mutex
+	running bool
+}
+
+// Busy reports whether this process is executing a crawl.
+func (r *Runner) Busy() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.running
 }
 
 func (r *Runner) Run() error {
+	if err := r.acquire(); err != nil {
+		return err
+	}
+	defer r.release()
+	return r.execute()
+}
+
+// Go starts a crawl in the background after reserving the single in-process slot.
+func (r *Runner) Go() error {
+	if err := r.acquire(); err != nil {
+		return err
+	}
+	go func() {
+		defer r.release()
+		_ = r.execute()
+	}()
+	return nil
+}
+
+func (r *Runner) acquire() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.running {
+		return ErrBusy
+	}
+	r.running = true
+	return nil
+}
+
+func (r *Runner) release() {
+	r.mu.Lock()
+	r.running = false
+	r.mu.Unlock()
+}
+
+func (r *Runner) execute() error {
 	now := r.Now()
 	runID, err := r.Store.StartCrawl(now)
 	if err != nil {

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"money-tacker/internal/config"
+	"money-tacker/internal/crawl"
 	"money-tacker/internal/db"
 	"money-tacker/internal/money"
 	"money-tacker/internal/store"
@@ -672,5 +673,92 @@ func TestHoldingsAndOverviewCumulativeReturn(t *testing.T) {
 	}
 	if parsed.CumulativeReturn != "+5.62" {
 		t.Fatalf("总累计收益率 %s want +5.62", parsed.CumulativeReturn)
+	}
+}
+
+func TestLoggedInUserListsCrawlsAndStartsOne(t *testing.T) {
+	s := testServer(t)
+	h := s.Router()
+	reg := doJSON(t, h, "POST", "/api/auth/register", map[string]string{"account": "alice", "password": "secret1"}, nil)
+	if reg.Code != 200 {
+		t.Fatalf("register %d %s", reg.Code, reg.Body.String())
+	}
+	ck := cookie(reg)
+	anon := doJSON(t, h, "GET", "/api/crawl-runs", nil, nil)
+	if anon.Code != 401 {
+		t.Fatalf("anon %d", anon.Code)
+	}
+	for i := 0; i < 3; i++ {
+		id, err := s.Store.StartCrawl(s.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		status := "success"
+		if i == 0 {
+			status = "fail"
+		}
+		if i == 1 {
+			status = "partial"
+		}
+		if err := s.Store.FinishCrawl(id, status, i+1, i+2, "note", s.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var started int
+	s.CrawlBusy = func() bool { return false }
+	s.Crawl = func() error { started++; return nil }
+	list := doJSON(t, h, "GET", "/api/crawl-runs?page=1", nil, ck)
+	if list.Code != 200 {
+		t.Fatalf("list %d %s", list.Code, list.Body.String())
+	}
+	var page struct {
+		Items []struct {
+			Status     string `json:"status"`
+			PagesOK    int    `json:"pages_ok"`
+			ProductsOK int    `json:"products_ok"`
+			Summary    string `json:"summary"`
+		} `json:"items"`
+		Total int  `json:"total"`
+		Page  int  `json:"page"`
+		Busy  bool `json:"busy"`
+	}
+	if err := json.Unmarshal(list.Body.Bytes(), &page); err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 3 || page.Page != 1 || page.Busy || len(page.Items) != 3 {
+		t.Fatalf("page %+v", page)
+	}
+	if page.Items[0].Status != "success" || page.Items[0].Summary != "note" || page.Items[0].PagesOK != 3 || page.Items[0].ProductsOK != 4 {
+		t.Fatalf("newest %+v", page.Items[0])
+	}
+	problems := doJSON(t, h, "GET", "/api/crawl-runs?problems=1", nil, ck)
+	if problems.Code != 200 {
+		t.Fatalf("problems %d %s", problems.Code, problems.Body.String())
+	}
+	var filtered struct {
+		Items []struct {
+			Status string `json:"status"`
+		} `json:"items"`
+		Total int `json:"total"`
+	}
+	if err := json.Unmarshal(problems.Body.Bytes(), &filtered); err != nil {
+		t.Fatal(err)
+	}
+	if filtered.Total != 2 || len(filtered.Items) != 2 {
+		t.Fatalf("filtered %+v", filtered)
+	}
+	for _, it := range filtered.Items {
+		if it.Status == "success" {
+			t.Fatalf("success included %+v", filtered.Items)
+		}
+	}
+	start := doJSON(t, h, "POST", "/api/crawl-runs", nil, ck)
+	if start.Code != 202 || started != 1 {
+		t.Fatalf("start %d started=%d %s", start.Code, started, start.Body.String())
+	}
+	s.Crawl = func() error { return crawl.ErrBusy }
+	denied := doJSON(t, h, "POST", "/api/crawl-runs", nil, ck)
+	if denied.Code != 409 {
+		t.Fatalf("busy %d %s", denied.Code, denied.Body.String())
 	}
 }
