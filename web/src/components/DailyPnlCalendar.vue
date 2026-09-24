@@ -58,7 +58,7 @@ function next() {
         <template v-if="c.kind !== 'pad'">
           <div class="cal-day">{{ c.day }}</div>
           <div v-if="c.kind !== 'blank'" class="cal-amt mono">{{ c.pnl }}</div>
-          <div v-if="c.kind === 'hang_zero'" class="cal-hang-label">挂零</div>
+          <div v-if="c.unitNav" class="mono" :class="c.kind === 'hang_zero' ? 'cal-hang-label' : 'cal-nav-label'">{{ c.unitNav }}</div>
         </template>
       </div>
     </div>

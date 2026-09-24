@@ -26,8 +26,9 @@ type Server struct {
 	Cfg       config.Config
 	Store     *store.Store
 	Now       func() time.Time
-	Crawl     func() error
-	CrawlBusy func() bool
+	Crawl          func() error
+	CrawlBusy      func() bool
+	RefreshProduct func(code string) error
 	Static    string
 }
 
@@ -63,6 +64,7 @@ func (s *Server) Router() http.Handler {
 			r.Post("/holdings/{code}/ledger/{id}/void", s.handleVoid)
 			r.Delete("/holdings/{code}", s.handleDeleteHolding)
 			r.Get("/holdings/{code}/pnl", s.handleHoldingPnl)
+			r.Post("/holdings/{code}/refresh", s.handleRefreshHolding)
 			r.Get("/products", s.handleProductCatalog)
 			r.Get("/crawl-runs", s.handleListCrawls)
 			r.Post("/crawl-runs", s.handleStartCrawl)
@@ -640,6 +642,33 @@ func (s *Server) handleHoldingPnl(w http.ResponseWriter, r *http.Request) {
 		"collected_daily": money.FormatFen(collected),
 		"collection_gap":  money.FormatFen(pnl.CollectionGap(cum, collected)),
 	})
+}
+
+func (s *Server) handleRefreshHolding(w http.ResponseWriter, r *http.Request) {
+	u := userFrom(r.Context())
+	code := strings.ToUpper(chi.URLParam(r, "code"))
+	if _, err := s.Store.HoldingByUserCode(u.ID, code); err != nil {
+		writeErr(w, 404, "NOT_FOUND", "持仓账户不存在")
+		return
+	}
+	if s.RefreshProduct == nil {
+		writeErr(w, 500, "INTERNAL", "产品刷新未配置")
+		return
+	}
+	if err := s.RefreshProduct(code); err != nil {
+		switch {
+		case errors.Is(err, crawl.ErrNoCatalogPage), errors.Is(err, crawl.ErrProductNotOnPage):
+			writeErr(w, 404, "PRODUCT_NOT_ON_PAGE", "这一页没有该产品，要更新得到请走全量采集")
+		case errors.Is(err, crawl.ErrPageUnread):
+			writeErr(w, 502, "PAGE_UNREAD", "这一页没有读成")
+		case errors.Is(err, crawl.ErrNoUnitNav):
+			writeErr(w, 409, "NO_UNIT_NAV", "本页没有单位净值")
+		default:
+			writeErr(w, 500, "INTERNAL", "服务器错误")
+		}
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
 func (s *Server) handleProduct(w http.ResponseWriter, r *http.Request) {

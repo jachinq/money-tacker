@@ -81,6 +81,7 @@ input:disabled { background: #f0ebe3; color: var(--muted); }
 .cal-cell-display { box-shadow: inset 0 0 0 2px var(--ink); }
 .cal-day { font-size: 12px; }
 .cal-amt { font-size: 12px; overflow-wrap: anywhere; }
+.cal-nav-label { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
 .cal-hang-label { font-size: 11px; color: var(--warn); }
 @media (max-width: 720px) {
   .grid { grid-template-columns: 1fr; }

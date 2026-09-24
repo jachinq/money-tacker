@@ -34,6 +34,7 @@ func main() {
 	srv := server.New(cfg, st)
 	srv.Crawl = runner.Go
 	srv.CrawlBusy = runner.Busy
+	srv.RefreshProduct = runner.RefreshProduct
 	if _, err := os.Stat("web/dist"); err == nil {
 		srv.Static = "web/dist"
 	}

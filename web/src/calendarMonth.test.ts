@@ -23,20 +23,24 @@ test("hang-zero, published flat, pos, and future stay distinct", () => {
     displayDate: "2026-09-19",
     days: [
       { date: "2026-09-18", pnl: "0.00", hang_zero: true, has_nav: false },
-      { date: "2026-09-19", pnl: "1.25", hang_zero: false, has_nav: true },
-      { date: "2026-09-20", pnl: "0.00", hang_zero: false, has_nav: true },
-      { date: "2026-09-22", pnl: "3.00", hang_zero: false, has_nav: true },
+      { date: "2026-09-19", pnl: "1.25", hang_zero: false, has_nav: true, unit_nav: "1.0562" },
+      { date: "2026-09-20", pnl: "0.00", hang_zero: false, has_nav: true, unit_nav: "1.0562" },
+      { date: "2026-09-22", pnl: "3.00", hang_zero: false, has_nav: true, unit_nav: "1.0600" },
     ],
   });
   const byDay = new Map(cells.filter((c) => c.day).map((c) => [c.day, c]));
   assert.equal(byDay.get(18)?.kind, "hang_zero");
   assert.equal(byDay.get(18)?.pnl, "0.00");
+  assert.equal(byDay.get(18)?.unitNav, "无净值");
   assert.equal(byDay.get(19)?.kind, "pos");
+  assert.equal(byDay.get(19)?.unitNav, "1.0562");
   assert.equal(byDay.get(19)?.isDisplayDate, true);
   assert.equal(byDay.get(20)?.kind, "flat");
   assert.equal(byDay.get(21)?.kind, "blank");
   assert.equal(byDay.get(22)?.kind, "blank");
   assert.equal(byDay.get(22)?.pnl, undefined);
+  assert.equal(byDay.get(22)?.unitNav, undefined);
+  assert.equal(byDay.get(21)?.unitNav, undefined);
 });
 
 test("shiftMonth wraps the year", () => {

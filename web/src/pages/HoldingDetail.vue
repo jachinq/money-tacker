@@ -19,6 +19,7 @@ const occur = ref("");
 const nav = ref("");
 const redeemMode = ref<"amount" | "shares" | "all">("amount");
 const redeemVal = ref("");
+const refreshing = ref(false);
 
 async function load() {
   const d = await api<{ holding: any; ledger: any[] }>("/api/holdings/" + code);
@@ -79,6 +80,19 @@ async function voidLast() {
   }
 }
 
+async function refreshProduct() {
+  err.value = "";
+  refreshing.value = true;
+  try {
+    await api("/api/holdings/" + code + "/refresh", { method: "POST", body: "{}" });
+    await load();
+  } catch (e) {
+    err.value = e instanceof ApiError ? e.message : "失败";
+  } finally {
+    refreshing.value = false;
+  }
+}
+
 async function remove() {
   if (!confirm("删除整本账户及其流水？净值库不受影响。")) return;
   await api("/api/holdings/" + code, { method: "DELETE" });
@@ -95,6 +109,7 @@ async function remove() {
       最新净值 {{ holding.latest_nav }} · 净值日 {{ holding.latest_nav_date }} · 间隔 {{ holding.stale_days }} 天
       <span v-if="holding.hang_zero" class="tag">净值未更新</span>
       <span v-if="!holding.listed" class="tag">已不在代销目录</span>
+      <button class="btn ghost" type="button" :disabled="refreshing" @click="refreshProduct">产品刷新</button>
     </p>
     <div class="grid">
       <div class="card"><h3>市值</h3><div class="num">{{ holding.market_value }}</div></div>

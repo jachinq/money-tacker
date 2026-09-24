@@ -3,6 +3,7 @@ export type DayRow = {
   pnl: string;
   hang_zero: boolean;
   has_nav: boolean;
+  unit_nav?: string;
 };
 
 export type CellKind = "pad" | "blank" | "hang_zero" | "flat" | "pos" | "neg";
@@ -13,6 +14,7 @@ export type MonthCell = {
   day?: number;
   date?: string;
   pnl?: string;
+  unitNav?: string;
   isDisplayDate?: boolean;
 };
 
@@ -82,12 +84,14 @@ export function buildMonthCells(opts: {
       out.push({ key: date, kind: "blank", day, date, isDisplayDate });
       continue;
     }
+    const unitNav = row.hang_zero || !row.has_nav ? "无净值" : row.unit_nav;
     out.push({
       key: date,
       kind: kindForRow(row),
       day,
       date,
       pnl: row.pnl,
+      unitNav,
       isDisplayDate,
     });
   }

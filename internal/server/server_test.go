@@ -762,3 +762,65 @@ func TestLoggedInUserListsCrawlsAndStartsOne(t *testing.T) {
 		t.Fatalf("busy %d %s", denied.Code, denied.Body.String())
 	}
 }
+
+type pageFetch struct {
+	body   string
+	status int
+}
+
+func (f pageFetch) Get(string) (string, int, error) {
+	return f.body, f.status, nil
+}
+
+func TestRefreshHoldingFromCatalogPage(t *testing.T) {
+	s := testServer(t)
+	h := s.Router()
+	reg := doJSON(t, h, "POST", "/api/auth/register", map[string]string{"account": "alice", "password": "secret1"}, nil)
+	ck := cookie(reg)
+	buy := doJSON(t, h, "POST", "/api/holdings", map[string]string{
+		"product_code": "AF247494G", "amount": "10000", "occur_date": "2026-09-18",
+	}, ck)
+	if buy.Code != 200 {
+		t.Fatalf("buy %d %s", buy.Code, buy.Body.String())
+	}
+	html := `<html><body><table>
+<tr><th>产品代码</th><th>产品名称</th><th>发行机构</th><th>单位净值</th><th>累计净值</th><th>截止日期</th></tr>
+<tr><td>AF247494G</td><td>刷新后名称</td><td>信银理财</td><td>1.0800</td><td>1.0800</td><td>2026-09-20</td></tr>
+</table></body></html>`
+	runner := &crawl.Runner{
+		Store:   s.Store,
+		Fetcher: pageFetch{body: html, status: 200},
+		BaseURL: "https://example.test/",
+		Now:     s.Now,
+	}
+	s.RefreshProduct = runner.RefreshProduct
+	ok := doJSON(t, h, "POST", "/api/holdings/AF247494G/refresh", map[string]string{}, ck)
+	if ok.Code != 200 {
+		t.Fatalf("refresh %d %s", ok.Code, ok.Body.String())
+	}
+	navs, err := s.Store.ListNav("AF247494G")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, n := range navs {
+		if n.NavDate == "2026-09-20" && n.UnitNavE8 == 108000000 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("navs %+v", navs)
+	}
+	pnl := doJSON(t, h, "GET", "/api/holdings/AF247494G/pnl", nil, ck)
+	if pnl.Code != 200 || !strings.Contains(pnl.Body.String(), `"date":"2026-09-20"`) || !strings.Contains(pnl.Body.String(), `"unit_nav":"1.08000000"`) {
+		t.Fatalf("pnl %d %s", pnl.Code, pnl.Body.String())
+	}
+	runner.Fetcher = pageFetch{body: `<html><body><table>
+<tr><th>产品代码</th><th>单位净值</th><th>截止日期</th></tr>
+<tr><td>OTHER</td><td>1.0000</td><td>2026-09-20</td></tr>
+</table></body></html>`, status: 200}
+	miss := doJSON(t, h, "POST", "/api/holdings/AF247494G/refresh", map[string]string{}, ck)
+	if miss.Code != 404 || !strings.Contains(miss.Body.String(), "这一页没有该产品") {
+		t.Fatalf("miss %d %s", miss.Code, miss.Body.String())
+	}
+}
