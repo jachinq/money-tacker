@@ -36,6 +36,11 @@ func (f HTTPFetcher) Get(url string) (string, int, error) {
 	return string(b), resp.StatusCode, nil
 }
 
+type observation struct {
+	NavDate string
+	UnitNav int64
+}
+
 type Runner struct {
 	Store    *store.Store
 	Fetcher  Fetcher
@@ -57,9 +62,11 @@ func (r *Runner) Run() error {
 		max = 250
 	}
 	seen := map[string]struct{}{}
+	obs := map[string]observation{}
 	pagesOK := 0
 	productsOK := 0
 	var errs []string
+	var notes []string
 	for i := 0; i < max; i++ {
 		u := base + "index.html"
 		if i > 0 {
@@ -94,6 +101,29 @@ func (r *Runner) Run() error {
 				errs = append(errs, err.Error())
 				continue
 			}
+			if _, ok := obs[row.Code]; ok && !row.HasUnitNav {
+				notes = append(notes, row.Code+": 后一次缺少单位净值")
+				continue
+			}
+			if prev, ok := obs[row.Code]; ok && row.HasUnitNav && prev.NavDate == row.NavDate && prev.UnitNav == row.UnitNavE8 {
+				if err := r.Store.UpsertSnapshot(row.Code, row.NavDate, row.UnitNavE8, row.AccNavE8, row.DailyReturnBP, "", now.Format(time.RFC3339)); err != nil {
+					errs = append(errs, err.Error())
+				}
+				continue
+			}
+			if prev, ok := obs[row.Code]; ok && row.HasUnitNav {
+				if err := r.Store.UpsertSnapshot(row.Code, row.NavDate, row.UnitNavE8, row.AccNavE8, row.DailyReturnBP, "", now.Format(time.RFC3339)); err != nil {
+					errs = append(errs, err.Error())
+					continue
+				}
+				if err := r.Store.UpdateObservation(runID, row.Code, row.NavDate, row.UnitNavE8); err != nil {
+					errs = append(errs, err.Error())
+					continue
+				}
+				notes = append(notes, fmt.Sprintf("%s: 净值日 %s 单位净值 %d → 净值日 %s 单位净值 %d", row.Code, prev.NavDate, prev.UnitNav, row.NavDate, row.UnitNavE8))
+				obs[row.Code] = observation{NavDate: row.NavDate, UnitNav: row.UnitNavE8}
+				continue
+			}
 			if row.HasUnitNav {
 				if err := r.Store.UpsertSnapshot(row.Code, row.NavDate, row.UnitNavE8, row.AccNavE8, row.DailyReturnBP, "", now.Format(time.RFC3339)); err != nil {
 					errs = append(errs, err.Error())
@@ -104,6 +134,7 @@ func (r *Runner) Run() error {
 				errs = append(errs, err.Error())
 				continue
 			}
+			obs[row.Code] = observation{NavDate: row.NavDate, UnitNav: row.UnitNavE8}
 			seen[row.Code] = struct{}{}
 			productsOK++
 		}
@@ -120,7 +151,7 @@ func (r *Runner) Run() error {
 	if status == "success" {
 		_ = r.Store.MarkMissingUnlisted(seen, now)
 	}
-	sum := strings.Join(errs, "; ")
+	sum := strings.Join(append(errs, notes...), "; ")
 	if len(sum) > 2000 {
 		sum = sum[:2000]
 	}

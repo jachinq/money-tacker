@@ -305,6 +305,12 @@ func (s *Store) InsertObservation(runID int64, code, navDate string, unit int64)
 	return err
 }
 
+func (s *Store) UpdateObservation(runID int64, code, navDate string, unit int64) error {
+	_, err := s.DB.Exec(`UPDATE nav_observation SET nav_date=?, unit_nav=? WHERE crawl_run_id=? AND product_code=?`,
+		navDate, unit, runID, code)
+	return err
+}
+
 func (s *Store) ListCrawlRuns(limit int) ([]CrawlRun, error) {
 	rows, err := s.DB.Query(`SELECT id, started_at, finished_at, status, pages_ok, products_ok, error_summary FROM crawl_run ORDER BY id DESC LIMIT ?`, limit)
 	if err != nil {
