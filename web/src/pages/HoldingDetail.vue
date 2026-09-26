@@ -135,19 +135,24 @@ async function remove() {
 <template>
   <div v-if="err" class="err">{{ err }}</div>
   <div v-if="holding">
-    <h2>{{ holding.name }}</h2>
+    <strong style="font-size: 1.3rem;">{{ holding.name }}</strong>
     <p class="code-line">
       <button class="code-link mono" type="button" @click="copyProductCode">{{ holding.product_code }}</button>
       <span v-if="codeNotice" class="muted">{{ codeNotice }}</span>
+      <span class="muted" style="font-size: 14px;">收益估算，以发行机构结算为准。当日收益对应展示日，不一定是当天的自然日。</span>
     </p>
-    <p>
-      最新净值 {{ holding.latest_nav }} · 净值日 {{ holding.latest_nav_date }} · 间隔 {{ holding.stale_days }} 天
-      <span v-if="holding.hang_zero" class="tag">净值未更新</span>
+    <p class="row-actions">
+      最新净值 {{ holding.latest_nav }} · 净值日 {{ holding.latest_nav_date }} · 
+      <span>间隔 {{ holding.stale_days }} 天 <span v-if="holding.hang_zero" style="color: var(--bad);">净值未更新</span></span>
       <span v-if="!holding.listed" class="tag">已不在代销目录</span>
-      <button class="btn ghost" type="button" :disabled="refreshing" @click="refreshProduct">产品刷新</button>
+      <button class="btn ghost" type="button" :disabled="refreshing" @click="refreshProduct" title="从银行目录重新拉取最新数据">刷新净值</button>
     </p>
     <div class="grid">
       <div class="card"><h3>市值</h3><div class="num">{{ holding.market_value }}</div></div>
+      <div class="card">
+        <h3>当日收益<span>{{ holding.display_date || "—" }}</span></h3>
+        <div class="num" :class="pnlClass(holding.daily_pnl)">{{ holding.daily_pnl }}</div>
+      </div>
       <div class="card">
         <h3>累计收益</h3>
         <div class="num" :class="pnlClass(holding.cumulative)">{{ holding.cumulative }}</div>
@@ -157,20 +162,43 @@ async function remove() {
         </div>
       </div>
       <div class="card">
-        <h3>累计收益率</h3>
-        <div class="num" :class="pnlClass(holding.cumulative_return || '0')">{{ holding.cumulative_return ? holding.cumulative_return + "%" : "—" }}</div>
-      </div>
-      <div class="card">
-        <h3>年化累计收益率</h3>
-        <div class="num" :class="pnlClass(holding.annualized_cumulative_return || '0')">{{ holding.annualized_cumulative_return ? holding.annualized_cumulative_return + "%" : "—" }}</div>
-      </div>
-      <div class="card">
-        <h3>当日收益</h3>
-        <div class="num" :class="pnlClass(holding.daily_pnl)">{{ holding.daily_pnl }}</div>
-        <div class="muted">展示日 {{ holding.display_date || "—" }}</div>
+        <div style="display: flex; flex-direction: row; gap: 4px; align-items: baseline;">
+          <h3>累计收益率</h3>
+          <div class="num" :class="pnlClass(holding.cumulative_return || '0')">{{ holding.cumulative_return ? holding.cumulative_return + "%" : "—" }}</div>
+        </div>
+        <div style="display: flex; flex-direction: row; gap: 4px; align-items: baseline;">
+          <h3>年化累计收益率</h3>
+          <div class="num" :class="pnlClass(holding.annualized_cumulative_return || '0')">{{ holding.annualized_cumulative_return ? holding.annualized_cumulative_return + "%" : "—" }}</div>
+        </div>
       </div>
     </div>
 
+    <h3>收益日历</h3>
+    <p class="muted" style="display: none;">与上方「当日收益」口径不同：这里按自然日排列。挂零与已公布且为 0 不是同一格。实线圈为展示日。</p>
+    <p v-if="collectionGap" class="muted" style="display: none;">
+      已采集按日合计 <span class="mono">{{ collectedDaily }}</span>
+      · 采集缺口 <span class="mono" :class="pnlClass(collectionGap)">{{ collectionGap }}</span>
+      （累计 − 已采集按日之和；缺口不是某一天赚到的钱，也不记入日历第一天）
+    </p>
+    <DailyPnlCalendar :days="days" :display-date="holding.display_date || ''" />
+
+
+
+    <h3>流水</h3>
+    <table>
+      <thead><tr><th>日</th><th>方向</th><th>金额</th><th>份额</th><th>所用净值</th><th>净值日</th></tr></thead>
+      <tbody>
+        <tr v-for="e in ledger" :key="e.id" :class="{ muted: e.voided }">
+          <td>{{ e.occur_date }}</td>
+          <td>{{ e.kind === "buy" ? "买入" : "赎回" }}{{ e.voided ? "（已作废）" : "" }}</td>
+          <td class="mono">{{ e.cash }}</td>
+          <td class="mono">{{ e.shares }}</td>
+          <td class="mono">{{ e.unit_nav }}</td>
+          <td>{{ e.nav_date_used }}</td>
+        </tr>
+      </tbody>
+    </table>
+    
     <div class="row-actions">
       <input v-model="amount" placeholder="追加金额" />
       <input v-model="occur" placeholder="发生日 YYYY-MM-DD" />
@@ -189,28 +217,5 @@ async function remove() {
       <button class="btn ghost" @click="remove">删除账户</button>
     </div>
 
-    <h3>流水</h3>
-    <table>
-      <thead><tr><th>日</th><th>方向</th><th>金额</th><th>份额</th><th>所用净值</th><th>净值日</th></tr></thead>
-      <tbody>
-        <tr v-for="e in ledger" :key="e.id" :class="{ muted: e.voided }">
-          <td>{{ e.occur_date }}</td>
-          <td>{{ e.kind === "buy" ? "买入" : "赎回" }}{{ e.voided ? "（已作废）" : "" }}</td>
-          <td class="mono">{{ e.cash }}</td>
-          <td class="mono">{{ e.shares }}</td>
-          <td class="mono">{{ e.unit_nav }}</td>
-          <td>{{ e.nav_date_used }}</td>
-        </tr>
-      </tbody>
-    </table>
-
-    <h3>按日收益（自然日月历）</h3>
-    <p class="muted">与上方「当日收益」口径不同：这里按自然日排列。挂零与已公布且为 0 不是同一格。实线圈为展示日。</p>
-    <p v-if="collectionGap" class="muted">
-      已采集按日合计 <span class="mono">{{ collectedDaily }}</span>
-      · 采集缺口 <span class="mono" :class="pnlClass(collectionGap)">{{ collectionGap }}</span>
-      （累计 − 已采集按日之和；缺口不是某一天赚到的钱，也不记入日历第一天）
-    </p>
-    <DailyPnlCalendar :days="days" :display-date="holding.display_date || ''" />
   </div>
 </template>

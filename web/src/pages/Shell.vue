@@ -16,7 +16,6 @@ const s = useSession();
         <router-link to="/account">{{ s.account }}</router-link>
       </nav>
     </header>
-    <p class="disclaimer">收益估算，以发行机构/代销机构结算为准。当日收益对应展示日（不晚于昨天的最近净值日），不是打开页面的自然日。</p>
     <router-view />
   </div>
 </template>

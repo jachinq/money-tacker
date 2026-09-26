@@ -63,7 +63,7 @@ input { padding: 8px 10px; border: 1px solid var(--line); background: #fff; }
 input:disabled { background: #f0ebe3; color: var(--muted); }
 .code-row { display: flex; gap: 8px; align-items: stretch; }
 .code-row input { flex: 1; min-width: 0; }
-.btn { background: var(--ink); color: var(--paper); border: 0; padding: 9px 16px; cursor: pointer; }
+.btn { background: var(--ink); color: var(--paper); border: 0; padding: 1px 8px; cursor: pointer; border-radius: 8px; }
 .btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
 .err { color: var(--bad); font-size: 14px; }
 .tag { display: inline-block; font-size: 12px; padding: 2px 8px; border: 1px solid var(--line); color: var(--warn); }
